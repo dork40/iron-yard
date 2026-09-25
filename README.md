@@ -1,10 +1,14 @@
 # High Noon Showdown
 
-High Noon Showdown v3.3.1 is an original Wild West browser game with local player progression, synthesized Web Audio effects, an AI-only Ghost Challenge personal-best race, casual multiplayer, and a live 1v1 arena. It contains no borrowed characters, art, sounds, maps, dialogue, or branding.
+High Noon Showdown v3.4.0 is an original Wild West browser game with local player progression, synthesized Web Audio effects, an AI-only Ghost Challenge personal-best race, casual multiplayer, and a live 3D 1v1 arena. It contains no borrowed characters, art, sounds, maps, dialogue, or branding.
+
+## v3.4.0 Three-Dimensional Arena
+
+Iron Yard now renders its compact multiplayer arena with Three.js/WebGL and locally generated textures. The release also fixes player movement being overwritten by server snapshots and reports version `3.4.0` in the app footer, browser title, and package metadata.
 
 ## Iron Yard Arena Mode
 
-Iron Yard is an original, asset-free compact 1v1 arena shooter. Start it from `PLAY`, select **Iron Yard**, then create a room code or join a friend's. Its dedicated WebSocket path provides 15 Hz player-state snapshots, server-side room capacity, server-resolved hit testing and damage, health, win/loss, and rival-disconnect feedback. It does not use or imitate third-party shooter branding or assets.
+Iron Yard is an original compact 1v1 arena shooter rendered with Three.js/WebGL, with procedural brick, concrete, and floor textures, first-person mouse look, WASD movement, two weapon loadouts, and a live rival. Start it from `PLAY`, select **Iron Yard**, then create a room code or join a friend's. The dedicated WebSocket server provides 15 Hz player-state snapshots and server-side hit/damage resolution. It does not use or imitate third-party shooter branding or assets.
 
 ## v3.1.0 Visual Refresh
 
@@ -217,7 +221,7 @@ Use the project's publishable/anon key only. Never expose a service-role key in 
 - **Trail Trace:** trace the generated winding target line with a mouse, touch, or pen. The final score combines farthest target progress with average line accuracy, with a small completion bonus.
 - **Bottle Shot:** a 30-second target range with six smaller, touch-accessible bottles visible at once. Click or tap each active bottle once to break it: green and blue bottles add +10, while the more-common red bottles subtract 10. A shot or tap on the range that misses an active bottle also subtracts 10. A new seeded six-bottle wave appears every 1.5 seconds; Ash's target hits, red-bottle mistakes, and range misses vary by difficulty.
 - **Rock Paper Scissors:** a simultaneous best-of-five, first-to-three match. Rock beats Scissors, Scissors beats Paper, and Paper beats Rock; matching choices tie and replay without awarding a round.
-- **Iron Yard:** live 1v1 compact arena shooting. Create a room code or join one, move with `WASD` or arrow keys, aim with the pointer, fire by clicking the arena or selecting `FIRE`, and reload with `R` or `RELOAD`. The dedicated arena WebSocket server controls capacity, state broadcasts, hit resolution, health, and results; it requires `VITE_ARENA_SERVER_URL`.
+- **Iron Yard:** live 1v1 Three.js/WebGL arena shooting. Create a room code or join one, click the arena to capture the mouse, move with `WASD`, aim with the mouse, fire with click or `FIRE`, and reload with `R` or `RELOAD`. `Escape` releases the mouse. The dedicated arena WebSocket server controls capacity, state broadcasts, hit resolution, health, and results; it requires `VITE_ARENA_SERVER_URL`.
 - **Showdown Series:** best of five, first to three wins. A lightweight cinematic title card opens the series, then every round reveals its randomly selected Quick Draw, Word Duel, Trail Trace, Bottle Shot, or Rock Paper Scissors test with a three-second countdown. The persistent series strip shows score, round, revealed test, and the next controller; win/loss announcements lead into a final champion screen with rematch and return controls. Ghost Challenge is excluded. In multiplayer, the prior-round winner controls the next round; a tie returns control to the host for a replay.
 - In every AI mode, acting before the signal is a false start and loses the round.
 
@@ -242,7 +246,7 @@ For Trail Trace, the deterministic path is scored locally and a submission is ac
 
 ### SQL Requirement
 
-Existing users who have not applied the v3.2.2 SQL block must rerun it. v3.3.1 adds no schema migration: Series presentation uses the existing shared round, score, and next-round-controller fields. Ghost Challenge remains local-only.
+Existing users who have not applied the v3.2.2 SQL block must rerun it. v3.4.0 adds no Supabase schema migration: Series presentation uses the existing shared round, score, and next-round-controller fields. Ghost Challenge remains local-only.
 
 ## Profile, Queues, And Authority
 
