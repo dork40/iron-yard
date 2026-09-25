@@ -1,4 +1,4 @@
-import type { AiDifficulty, DuelResult, DuelWord, GameSettings, RpsChoice } from "../types";
+﻿import type { AiDifficulty, DuelResult, DuelWord, GameSettings, RpsChoice } from "../types";
 
 export const bottleRoundMs = 30_000;
 export const bottleTargetMs = 1_500;
@@ -94,3 +94,4 @@ export function resolveRps(player: RpsChoice, opponent: RpsChoice): DuelResult {
   const playerWins = player !== opponent && beats[player] === opponent;
   return { outcome: playerWins ? "win" : "loss", opponentReactionMs: 0, message: player === opponent ? "A tie. The host deals the next round." : `${player.toUpperCase()} ${playerWins ? "beats" : "loses to"} ${opponent.toUpperCase()}.` };
 }
+

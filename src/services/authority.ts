@@ -1,4 +1,4 @@
-import type { AuthorityConfig, TurnCredentials } from "../types";
+﻿import type { AuthorityConfig, TurnCredentials } from "../types";
 
 const rawUrl = import.meta.env.VITE_AUTHORITY_URL?.trim();
 const validUrl = (() => {
@@ -40,3 +40,4 @@ export async function fetchTurnCredentials(): Promise<TurnCredentials | null> {
     return { iceServers: payload.iceServers, expiresAt: payload.expiresAt };
   } catch { authority.turnStatus = "unavailable"; return null; }
 }
+

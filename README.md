@@ -1,10 +1,10 @@
-# High Noon Showdown
+﻿# High Noon Showdown
 
-High Noon Showdown v3.4.0 is an original Wild West browser game with local player progression, synthesized Web Audio effects, an AI-only Ghost Challenge personal-best race, casual multiplayer, and a live 3D 1v1 arena. It contains no borrowed characters, art, sounds, maps, dialogue, or branding.
+High Noon Showdown v3.4.1 is an original Wild West browser game with local player progression, synthesized Web Audio effects, an AI-only Ghost Challenge personal-best race, casual multiplayer, and a live 3D 1v1 arena. It contains no borrowed characters, art, sounds, maps, dialogue, or branding.
 
-## v3.4.0 Three-Dimensional Arena
+## v3.4.1 Three-Dimensional Arena
 
-Iron Yard now renders its compact multiplayer arena with Three.js/WebGL and locally generated textures. The release also fixes player movement being overwritten by server snapshots and reports version `3.4.0` in the app footer, browser title, and package metadata.
+Iron Yard now renders its compact multiplayer arena with Three.js/WebGL and locally generated textures. The release also fixes player movement being overwritten by server snapshots and reports version `3.4.1` in the app footer, browser title, and package metadata.
 
 ## Iron Yard Arena Mode
 
@@ -246,7 +246,7 @@ For Trail Trace, the deterministic path is scored locally and a submission is ac
 
 ### SQL Requirement
 
-Existing users who have not applied the v3.2.2 SQL block must rerun it. v3.4.0 adds no Supabase schema migration: Series presentation uses the existing shared round, score, and next-round-controller fields. Ghost Challenge remains local-only.
+Existing users who have not applied the v3.2.2 SQL block must rerun it. v3.4.1 adds no Supabase schema migration: Series presentation uses the existing shared round, score, and next-round-controller fields. Ghost Challenge remains local-only.
 
 ## Profile, Queues, And Authority
 
@@ -271,3 +271,4 @@ GitHub Actions in `.github/workflows/build.yml` installs and builds both the bro
 - `src/style.css` - v3.1 frontier visual system, responsive game surfaces, and mobile-safe target styling
 - `src/services/authority.ts` - optional authenticated TURN ticket and credential contract
 - `server/` - separately deployable HTTP/WebSocket service, including the live Iron Yard 1v1 room protocol and TURN credential foundation; not a production ranked system
+

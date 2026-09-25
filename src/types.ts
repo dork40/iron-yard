@@ -1,4 +1,4 @@
-export type DirectGameMode = "original-quick-draw" | "word-duel" | "trail-trace" | "bottle-shot" | "rock-paper-scissors";
+﻿export type DirectGameMode = "original-quick-draw" | "word-duel" | "trail-trace" | "bottle-shot" | "rock-paper-scissors";
 export type AiGameMode = DirectGameMode | "ghost-challenge" | "arena-skirmish";
 export type MultiplayerGameMode = DirectGameMode | "showdown-series";
 export type GameMode = AiGameMode | "showdown-series";
@@ -99,3 +99,4 @@ export interface AuthorityConfig {
   turnStatus: "not-configured" | "invalid-url" | "ticket-required" | "requesting" | "relay-ready" | "ticket-rejected" | "unavailable" | "invalid-response";
 }
 export interface TurnCredentials { iceServers: RTCIceServer[]; expiresAt: string; }
+

@@ -1,4 +1,4 @@
-import { createClient, type RealtimeChannel, type SupabaseClient } from "@supabase/supabase-js";
+﻿import { createClient, type RealtimeChannel, type SupabaseClient } from "@supabase/supabase-js";
 import type { MultiplayerGameMode, MultiplayerRound, QuickMatchQueueEntry, Room, RoomRoundState, RoomStatus, RpsChoice } from "../types";
 import { minimumTrailAccuracy, minimumTrailProgress } from "../game/trail";
 import { authority, fetchTurnCredentials } from "./authority";
@@ -430,3 +430,4 @@ function resolveRpsWinner(host: RpsChoice, guest: RpsChoice) {
   const beats: Record<RpsChoice, RpsChoice> = { rock: "scissors", paper: "rock", scissors: "paper" };
   return host === guest ? "tie" : beats[host] === guest ? "host" : "guest";
 }
+
