@@ -99,6 +99,7 @@ const arenaJoin = z.discriminatedUnion("type", [z.object({ type: z.literal("crea
 const arenaState = z.object({ type: z.literal("state"), x: z.number().finite().min(-1.89).max(1.89), z: z.number().finite().min(-1).max(2), yaw: z.number().finite().min(-100).max(100), pitch: z.number().finite().min(-1.3).max(1.3) });
 const arenaShot = z.object({ type: z.literal("shot"), loadout: z.enum(["sidearm", "carbine"]), yaw: z.number().finite().min(-100).max(100), pitch: z.number().finite().min(-1.3).max(1.3) });
 const arenaWalls = [[-22.5, 22.5, -22.5, -21.5], [-22.5, 22.5, 21.5, 22.5], [-22.5, -21.5, -22.5, 22.5], [21.5, 22.5, -22.5, 22.5], [-11.5, -6.5, -7.5, -4.5], [5.5, 10.5, 2.5, 5.5], [-1.5, 1.5, -3.5, 3.5], [-8.5, -5.5, 8.5, 11.5], [8.5, 11.5, -12.5, -9.5]] as const;
+function insideArenaWall(x: number, z: number) { return arenaWalls.some(([minX, maxX, minZ, maxZ]) => x > minX - .45 && x < maxX + .45 && z > minZ - .45 && z < maxZ + .45); }
 function wallBeforeTarget(x: number, z: number, directionX: number, directionZ: number, targetDistance: number) { let nearest = Infinity; for (const [minX, maxX, minZ, maxZ] of arenaWalls) { let near = -Infinity, far = Infinity; for (const [origin, direction, min, max] of [[x, directionX, minX, maxX], [z, directionZ, minZ, maxZ]] as const) { if (Math.abs(direction) < .000001) { if (origin < min || origin > max) { near = Infinity; break; } continue; } const first = (min - origin) / direction, second = (max - origin) / direction; near = Math.max(near, Math.min(first, second)); far = Math.min(far, Math.max(first, second)); } if (near <= far && far >= 0) nearest = Math.min(nearest, Math.max(0, near)); } return nearest < targetDistance; }
 function arenaSend(socket: WebSocket, payload: object) { if (socket.readyState === socket.OPEN) socket.send(JSON.stringify(payload)); }
 function arenaSnapshot(room: ArenaRoom) { return { type: "state", started: room.started, players: { host: room.players.host, guest: room.players.guest } }; }
@@ -141,7 +142,7 @@ arenaWss.on("connection", (socket, request) => {
          const now = Date.now();
          const elapsed = Math.min(1, Math.max(0, (now - player.lastPositionAt) / 1000));
          const distance = Math.hypot((position.x - player.x) * 8, (position.z - player.z) * 12);
-         if (distance > 7 * elapsed + .5) return;
+          if (distance > 7 * elapsed + .5 || insideArenaWall(position.x * 8, 1 - position.z * 12)) return;
          Object.assign(player, position, { lastPositionAt: now });
          return;
        }

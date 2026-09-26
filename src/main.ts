@@ -8,7 +8,7 @@ import { authority } from "./services/authority";
 import type { AiDifficulty, DuelResult, DirectGameMode, GameMode, LocalModeStats, MultiplayerGameMode, MultiplayerRound, PlayerProfile, Room, Round, RpsChoice } from "./types";
 
 type Page = "home" | "mode-select" | "game" | "multiplayer" | "how-to" | "profile";
-const appVersion = "3.6.0";
+const appVersion = "3.7.0";
 const root = document.querySelector<HTMLDivElement>("#app")!;
 const mobileViewport = window.matchMedia("(max-width: 700px)");
 let page: Page = "home";
@@ -408,6 +408,7 @@ function render() {
   root.querySelectorAll<HTMLButtonElement>("[data-queue]").forEach(button => button.addEventListener("click", () => { queueKind = button.dataset.queue as "casual" | "ranked"; render(); }));
   root.querySelector<HTMLFormElement>("#profile-form")?.addEventListener("submit", event => { event.preventDefault(); const input = root.querySelector<HTMLInputElement>("#display-name"); profile.displayName = input?.value.trim().replace(/\s+/g, " ").slice(0, 24) || "Unnamed Drifter"; saveProfile(); render(); });
   root.querySelector("#fullscreen-toggle")?.addEventListener("click", toggleFullscreen);
+  root.querySelector("#arena-return")?.addEventListener("click", () => nav("mode-select"));
   const canvas = root.querySelector<HTMLCanvasElement>("#trail-canvas");
   if (canvas) setupTrailCanvas(canvas);
   if (page === "game" && mode === "arena-skirmish") mountArena(result => {
