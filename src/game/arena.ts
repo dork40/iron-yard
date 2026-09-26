@@ -144,10 +144,10 @@ export function mountArena(_onComplete: (result: ArenaResult) => void) {
     if (event.type === "state" && !event.started) { if (seat) setOnlineStatus(`ROOM ${currentRoom}. WAITING FOR THE OTHER PLAYER.`); return; }
     if (event.type === "state" && event.started && !active) deploy(true);
     if (event.type === "state" && active && seat) {
-      const own = event.players[seat], other = event.players[seat === "host" ? "guest" : "host"];
+      const ownSeat = seat, own = event.players[ownSeat], other = event.players[ownSeat === "host" ? "guest" : "host"];
       if (!remote) { remote = createFighter("#405e6a", "character-k"); scene.add(remote); applySpawn(own); }
       // Local movement is predicted by FpsPlayer; prune acknowledged inputs and blend only server correction.
-      pendingInputs = pendingInputs.filter(sequence => sequence > event.ack[seat]);
+      pendingInputs = pendingInputs.filter(sequence => sequence > event.ack[ownSeat]);
       const confirmed = new THREE.Vector3(own.x * 8, camera.position.y, 1 - own.z * 12);
       if (camera.position.distanceTo(confirmed) > .12) correction = confirmed;
       remoteSamples.push({ receivedAt: performance.now(), x: other.x, z: other.z, yaw: other.yaw });
