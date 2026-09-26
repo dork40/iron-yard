@@ -133,7 +133,7 @@ export function mountArena(_onComplete: (result: ArenaResult) => void) {
     touch.setEnabled(enabled); arenaFrame.dataset.touch = String(enabled); lock.textContent = enabled ? "TAP TO START" : "CLICK TO DEPLOY";
   };
   if (touchRoot && touchStickArea && touchAimArea && touchStick) {
-    touch = new TouchInput(touchRoot, touchStickArea, touchAimArea, touchStick, settings.touch, (x, y) => player.look(x * settings.sensitivity, y * settings.sensitivity), fire, reload);
+    touch = new TouchInput(touchRoot, touchStickArea, touchAimArea, touchStick, settings.touch, (x, y) => player.look(x, y, settings.sensitivity), fire, reload);
     applyTouchSettings();
   }
   const equip = (id: WeaponId) => { weapon.select(id); camera.remove(gun); gun = createWeapon(camera, id); message.textContent = `${weapons[id].name} EQUIPPED.`; updateHud(); };
