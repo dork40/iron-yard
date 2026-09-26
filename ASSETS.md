@@ -1,8 +1,8 @@
 # Asset Sources
 
-## Iron Yard materials
+## Arena materials
 
-The following texture files are bundled locally in `public/textures/` and are used only for the original Iron Yard environment.
+The following texture files are bundled locally in `public/textures/` and are used by the original Iron Yard, Freight Terminal, and Foundry environments. The maps also use locally generated procedural canvas materials; no copied map assets are used.
 
 | Files | Asset | Author | Source | License |
 | --- | --- | --- | --- | --- |

@@ -2,7 +2,7 @@ import * as THREE from "three";
 import type { DesktopInput } from "./input";
 export class FpsPlayer {
   velocity = new THREE.Vector3(); yaw = 0; pitch = 0; grounded = true; crouched = false; sprinting = false; health = 100;
-  constructor(readonly camera: THREE.PerspectiveCamera, readonly colliders: THREE.Box3[]) { camera.position.set(-10, 1.7, 9); camera.rotation.order = "YXZ"; }
+  constructor(readonly camera: THREE.PerspectiveCamera, readonly colliders: THREE.Box3[]) { camera.rotation.order = "YXZ"; }
   look(x: number, y: number, sensitivity: number) { this.yaw -= x * sensitivity; this.pitch = THREE.MathUtils.clamp(this.pitch - y * sensitivity, -1.45, 1.45); }
   update(dt: number, input: DesktopInput) {
     this.crouched = input.keys.has("ControlLeft"); this.sprinting = input.keys.has("ShiftLeft") && !this.crouched;

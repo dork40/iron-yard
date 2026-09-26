@@ -3,7 +3,7 @@ import { playSound } from "./audio";
 import { resetBot, updateBot, type Bot } from "./bots";
 import { paintCrosshair } from "./crosshair";
 import { DesktopInput } from "./input";
-import { buildIronYard, ironYardCoverPoints } from "./maps";
+import { arenaMaps, buildArenaMap, type ArenaMap, type ArenaMapId } from "./maps";
 import { ArenaNetwork, arenaSocketUrl, type ArenaNetworkEvent } from "./networking";
 import { FpsPlayer } from "./player";
 import { Recoil } from "./recoil";
@@ -24,13 +24,28 @@ export function mountArena(_onComplete: (result: ArenaResult) => void) {
   const arenaGame = document.querySelector<HTMLElement>(".arena-game"), host = document.querySelector<HTMLElement>("#arena-canvas"), message = document.querySelector<HTMLElement>("#arena-message"), lock = document.querySelector<HTMLButtonElement>("#arena-lock"), health = document.querySelector<HTMLElement>("#arena-health"), ammo = document.querySelector<HTMLElement>("#arena-ammo"), rival = document.querySelector<HTMLElement>("#arena-rival"), phase = document.querySelector<HTMLElement>("#arena-phase"), cash = document.querySelector<HTMLElement>("#arena-cash"), score = document.querySelector<HTMLElement>("#arena-score"), reticle = document.querySelector<HTMLElement>("#arena-crosshair"), pause = document.querySelector<HTMLElement>("#arena-pause"), feedback = document.querySelector<HTMLElement>("#arena-feedback"), buyCash = document.querySelector<HTMLElement>("#arena-buy-cash"), buyPhase = document.querySelector<HTMLElement>("#arena-buy-phase"), buyZone = document.querySelector<HTMLElement>("#arena-buy-zone"), buyRequirement = document.querySelector<HTMLElement>("#arena-buy-requirement"), fullscreen = document.querySelector<HTMLButtonElement>("#arena-fullscreen");
   if (!arenaGame || !host || !message || !lock || !health || !ammo || !rival || !phase || !cash || !score || !reticle || !pause || !feedback || !buyCash || !buyPhase || !buyZone || !buyRequirement || !fullscreen) return;
 
-  const settings = loadSettings(), scene = new THREE.Scene(), camera = new THREE.PerspectiveCamera(settings.fov, 16 / 9, .05, 90), renderer = createRenderer(host, settings.graphics), colliders = buildIronYard(scene), player = new FpsPlayer(camera, colliders), weapon = new WeaponState(), recoil = new Recoil(), network = new ArenaNetwork(), tactical = new TacticalRound();
-  scene.add(camera); scene.background = new THREE.Color("#9aabb0"); scene.fog = new THREE.Fog("#9aabb0", 24, 58); scene.add(new THREE.HemisphereLight("#dce9ed", "#343334", 2));
-  const sun = new THREE.DirectionalLight("#ffe0bb", 3); sun.position.set(-10, 16, 8); sun.castShadow = settings.graphics.shadows; scene.add(sun);
+  const settings = loadSettings(), scene = new THREE.Scene(), camera = new THREE.PerspectiveCamera(settings.fov, 16 / 9, .05, 90), renderer = createRenderer(host, settings.graphics), colliders: THREE.Box3[] = [], initialMap = buildArenaMap(scene, "iron-yard"), player = new FpsPlayer(camera, colliders), weapon = new WeaponState(), recoil = new Recoil(), network = new ArenaNetwork(), tactical = new TacticalRound();
+  colliders.push(...initialMap.colliders); camera.position.copy(initialMap.playerSpawn); scene.add(camera);
+  const hemisphere = new THREE.HemisphereLight("#dce9ed", "#343334", 2), sun = new THREE.DirectionalLight("#ffe0bb", 3); sun.castShadow = settings.graphics.shadows; scene.add(hemisphere, sun);
   let gun = createWeapon(camera, weapon.spec.id), bots: Bot[] = [], remote: THREE.Group | undefined, seat: "host" | "guest" | undefined, online = false, active = false, aiming = false, shots = 0, hits = 0, kills = 0, lastSync = 0, lastFrame = performance.now(), config: ArenaConfig = { ...defaultArenaConfig }, openPanel: ArenaPanel | undefined, pausedAt = 0, binding: BindingAction | undefined;
   const owned = new Set<WeaponId>(["pistol"]);
   const raycaster = new THREE.Raycaster(), muzzle = new THREE.PointLight("#ffbd72", 0, 4); camera.add(muzzle);
-  const inBuyZone = () => camera.position.distanceTo(new THREE.Vector3(-10, 1.7, 9)) < 7;
+  let activeMap: ArenaMap = initialMap;
+  const applyAtmosphere = (map: ArenaMap) => {
+    const atmosphere = map.atmosphere;
+    scene.background = new THREE.Color(atmosphere.background); scene.fog = new THREE.Fog(atmosphere.fog, atmosphere.fogNear, atmosphere.fogFar);
+    hemisphere.color.set(atmosphere.sky); hemisphere.groundColor.set(atmosphere.ground); sun.color.set(atmosphere.light); sun.position.set(...atmosphere.lightPosition); sun.intensity = atmosphere.lightIntensity;
+  };
+  const disposeMap = (map: ArenaMap) => {
+    const materials = new Set<THREE.Material>(), textures = new Set<THREE.Texture>();
+    map.group.traverse(object => { if (object instanceof THREE.Mesh) { object.geometry.dispose(); (Array.isArray(object.material) ? object.material : [object.material]).forEach(material => materials.add(material)); } });
+    materials.forEach(material => { Object.values(material).forEach(value => { if (value instanceof THREE.Texture) textures.add(value); }); material.dispose(); }); textures.forEach(texture => texture.dispose()); scene.remove(map.group);
+  };
+  const setMap = (id: ArenaMapId) => {
+    disposeMap(activeMap); activeMap = buildArenaMap(scene, id); colliders.splice(0, colliders.length, ...activeMap.colliders); applyAtmosphere(activeMap);
+  };
+  applyAtmosphere(activeMap);
+  const inBuyZone = () => camera.position.distanceTo(activeMap.playerSpawn) < activeMap.buyRadius;
   const panels: Record<ArenaPanel, HTMLElement> = {
     buy: document.querySelector<HTMLElement>("#arena-buy-panel")!,
     loadout: document.querySelector<HTMLElement>("#arena-loadout-panel")!,
@@ -84,9 +99,9 @@ export function mountArena(_onComplete: (result: ArenaResult) => void) {
     pause.hidden = true;
     updateHud();
   };
-  const spawnBots = () => { bots.forEach(bot => scene.remove(bot.group)); bots = Array.from({ length: config.botCount }, (_, i) => { const group = createFighter(i ? "#405e6a" : "#6a4e47", i % 2 ? "character-f" : "character-a"); group.position.set(10 - i * 5, 0, -9 + i * 6); scene.add(group); const bot: Bot = { group, health: 100, velocity: new THREE.Vector3(), spawn: group.position.clone(), seed: 0x1a2b3c4d + i, lastSeen: group.position.clone(), nextDecision: 0, reactionUntil: 0, nextShot: 0, reloadUntil: 0, burstShots: 0, strafe: i % 2 ? -1 : 1 }; resetBot(bot, performance.now()); return bot; }); };
-  const spawnInBuyZone = () => { camera.position.set(-10, 1.7, 9); player.velocity.set(0, 0, 0); player.health = 100; };
-  const deploy = (isOnline = false) => { online = isOnline; pausedAt = 0; if (online) { bots.forEach(bot => scene.remove(bot.group)); bots = []; } else { spawnBots(); tactical.start(performance.now()); spawnInBuyZone(); } active = true; lock.hidden = false; document.querySelectorAll<HTMLButtonElement>("#arena-fire,#arena-reload,#arena-ads").forEach(button => button.disabled = false); message.textContent = online ? "RIVAL CONNECTED. CLICK TO DEPLOY." : "BUY PHASE STARTED. PRESS B TO BUY WEAPONS."; updateHud(); };
+  const spawnBots = () => { bots.forEach(bot => scene.remove(bot.group)); bots = Array.from({ length: config.botCount }, (_, i) => { const group = createFighter(i ? "#405e6a" : "#6a4e47", i % 2 ? "character-f" : "character-a"), spawn = activeMap.botSpawns[i % activeMap.botSpawns.length]; group.position.copy(spawn); scene.add(group); const bot: Bot = { group, health: 100, velocity: new THREE.Vector3(), spawn: group.position.clone(), seed: 0x1a2b3c4d + i, lastSeen: group.position.clone(), nextDecision: 0, reactionUntil: 0, nextShot: 0, reloadUntil: 0, burstShots: 0, strafe: i % 2 ? -1 : 1 }; resetBot(bot, performance.now()); return bot; }); };
+  const spawnInBuyZone = () => { camera.position.copy(activeMap.playerSpawn); player.velocity.set(0, 0, 0); player.health = 100; };
+  const deploy = (isOnline = false, mapId: ArenaMapId = "iron-yard") => { setMap(mapId); online = isOnline; pausedAt = 0; if (online) { bots.forEach(bot => scene.remove(bot.group)); bots = []; } else { spawnBots(); tactical.start(performance.now()); spawnInBuyZone(); } active = true; lock.hidden = false; document.querySelectorAll<HTMLButtonElement>("#arena-fire,#arena-reload,#arena-ads").forEach(button => button.disabled = false); message.textContent = online ? "RIVAL CONNECTED. IRON YARD IS THE ONLINE MAP. CLICK TO DEPLOY." : `${activeMap.name.toUpperCase()} BUY PHASE STARTED. PRESS B TO BUY WEAPONS.`; updateHud(); };
   const tracer = (from: THREE.Vector3, to: THREE.Vector3) => { const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints([from, to]), new THREE.LineBasicMaterial({ color: "#ffd28a" })); scene.add(line); window.setTimeout(() => { scene.remove(line); line.geometry.dispose(); (line.material as THREE.Material).dispose(); }, 70); };
   const wallDistance = (from: THREE.Vector3, direction: THREE.Vector3) => { let nearest = Infinity; for (const box of colliders) { const point = new THREE.Vector3(); if (raycaster.ray.set(from, direction).intersectBox(box, point)) nearest = Math.min(nearest, point.distanceTo(from)); } return nearest; };
   const hitFeedback = (text: string) => { feedback.textContent = text; window.setTimeout(() => { feedback.textContent = ""; }, 380); };
@@ -119,7 +134,7 @@ export function mountArena(_onComplete: (result: ArenaResult) => void) {
   document.querySelector("#cross-share")?.addEventListener("click", () => navigator.clipboard?.writeText(crosshairCode(settings.crosshair)));
   document.querySelector<HTMLInputElement>("#cross-import")?.addEventListener("change", event => { const value = importCrosshair((event.target as HTMLInputElement).value); if (value) { settings.crosshair = value; paintCrosshair(reticle, value); saveSettings(settings); syncSettingsControls(); } });
   syncSettingsControls(); updateHud();
-  document.querySelector("#arena-bot")?.addEventListener("click", () => { config = { difficulty: document.querySelector<HTMLSelectElement>("#arena-difficulty")?.value as ArenaConfig["difficulty"] ?? "standard", botCount: Number(document.querySelector<HTMLSelectElement>("#arena-bot-count")?.value ?? 1) as ArenaConfig["botCount"] }; deploy(); });
+  document.querySelector("#arena-bot")?.addEventListener("click", () => { config = { difficulty: document.querySelector<HTMLSelectElement>("#arena-difficulty")?.value as ArenaConfig["difficulty"] ?? "standard", botCount: Number(document.querySelector<HTMLSelectElement>("#arena-bot-count")?.value ?? 1) as ArenaConfig["botCount"] }; const selectedMap = document.querySelector<HTMLSelectElement>("#arena-map")?.value as ArenaMapId; deploy(false, arenaMaps[selectedMap] ? selectedMap : "iron-yard"); });
   document.querySelector("#arena-create")?.addEventListener("click", () => { if (network.connect("create", "", handleNetwork)) message.textContent = "CREATING ROOM..."; });
   document.querySelector("#arena-join")?.addEventListener("click", () => { const code = document.querySelector<HTMLInputElement>("#arena-room-code")?.value.trim().toUpperCase() ?? ""; if (code.length === 6 && network.connect("join", code, handleNetwork)) message.textContent = "JOINING ROOM..."; });
   document.querySelectorAll<HTMLButtonElement>("[data-arena-panel]").forEach(button => button.addEventListener("click", () => showPanel(button.dataset.arenaPanel as ArenaPanel)));
@@ -160,13 +175,13 @@ export function mountArena(_onComplete: (result: ArenaResult) => void) {
       updateWeaponViewModel(gun, now, player.velocity.length(), aiming, weapon.reloadProgress(now));
       const targetFov = aiming ? 58 : settings.fov; camera.fov += (targetFov - camera.fov) * Math.min(1, dt * 12); camera.updateProjectionMatrix();
       const botDifficulty = config.difficulty === "rookie" ? "easy" : config.difficulty === "veteran" ? "hard" : "normal";
-      bots.forEach(bot => updateBot(bot, camera.position, now, dt, colliders, ironYardCoverPoints, (from, direction) => {
+      bots.forEach(bot => updateBot(bot, camera.position, now, dt, colliders, activeMap.coverPoints, (from, direction) => {
         if (tactical.phase !== "live") return;
         triggerFighterFire(bot.group, now); raycaster.set(from, direction);
         const body = camera.position.clone(); body.y -= .45; const along = body.sub(from).dot(direction);
         if (along > 0 && along < wallDistance(from, direction)) {
           player.health = Math.max(0, player.health - 12); hitFeedback("DAMAGE");
-          if (!player.health) { player.health = 100; tactical.death(); camera.position.set(-10, 1.7, 9); message.textContent = "RESPAWNED. -$300."; }
+          if (!player.health) { tactical.death(); spawnInBuyZone(); message.textContent = "RESPAWNED. -$300."; }
         }
       }, botDifficulty));
       bots.forEach(bot => updateFighter(bot.group, dt, now));
@@ -177,7 +192,7 @@ export function mountArena(_onComplete: (result: ArenaResult) => void) {
     renderer.render(scene, camera); raf = requestAnimationFrame(frame);
   };
   raf = requestAnimationFrame(frame);
-  stop = () => { cancelAnimationFrame(raf); network.close(); input.destroy(); observer.disconnect(); document.exitPointerLock?.(); document.removeEventListener("keydown", onKeyDown); document.removeEventListener("pointerlockchange", onLockChange); document.removeEventListener("fullscreenchange", updateFullscreen); renderer.dispose(); host.replaceChildren(); stop = undefined; };
+  stop = () => { cancelAnimationFrame(raf); network.close(); input.destroy(); observer.disconnect(); document.exitPointerLock?.(); document.removeEventListener("keydown", onKeyDown); document.removeEventListener("pointerlockchange", onLockChange); document.removeEventListener("fullscreenchange", updateFullscreen); disposeMap(activeMap); renderer.dispose(); host.replaceChildren(); stop = undefined; };
   return stop;
 }
 
