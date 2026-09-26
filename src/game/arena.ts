@@ -137,7 +137,7 @@ export function mountArena(_onComplete: (result: ArenaResult) => void) {
       if (event.status === "connecting") setOnlineStatus("CONNECTING TO THE PRIVATE 1V1 SERVER...");
       if (event.status === "connected") setOnlineStatus("CONNECTED. CONFIRMING YOUR ROOM...");
       if (event.status === "reconnecting") { active = false; document.exitPointerLock?.(); message.textContent = "CONNECTION DROPPED. RECONNECTING TO YOUR RESERVED SEAT..."; setOnlineStatus("RECONNECTING. YOUR SEAT IS RESERVED FOR 30 SECONDS."); }
-      if (event.status === "closed") { active = false; document.exitPointerLock?.(); message.textContent = "CONNECTION CLOSED. CREATE OR JOIN A ROOM TO TRY AGAIN."; setOnlineStatus("CONNECTION CLOSED. THE PRIVATE SERVER MAY BE UNAVAILABLE."); }
+      if (event.status === "closed") { active = false; document.exitPointerLock?.(); message.textContent = "CONNECTION CLOSED. CREATE OR JOIN A ROOM TO TRY AGAIN."; setOnlineStatus(event.reason ? `CONNECTION CLOSED: ${event.reason}` : "CONNECTION CLOSED. THE PRIVATE SERVER MAY BE UNAVAILABLE."); }
       return;
     }
     if (event.type === "joined") { seat = event.seat; currentRoom = event.room; updateRoomSharing(); message.textContent = `ROOM ${event.room}. WAITING FOR RIVAL.`; setOnlineStatus(event.seat === "host" ? `ROOM ${event.room} CREATED. SHARE THE CODE; PLAY STARTS AUTOMATICALLY WHEN THEY JOIN.` : `JOINED ROOM ${event.room}. WAITING FOR THE HOST TO START.`); return; }

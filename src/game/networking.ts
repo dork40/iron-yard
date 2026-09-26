@@ -4,7 +4,7 @@ export type ArenaMetrics = { transport: "websocket" | "webtransport"; rttMs: num
 export type NetworkSimulation = { latencyMs: number; jitterMs: number; lossPercent: number };
 export type ArenaRegion = { id: string; label: string; url: string; statusUrl?: string; webTransportUrl?: string };
 export type ArenaNetworkEvent =
-  | { type: "connection"; status: "connecting" | "connected" | "reconnecting" | "closed"; transport?: "websocket" | "webtransport" }
+  | { type: "connection"; status: "connecting" | "connected" | "reconnecting" | "closed"; transport?: "websocket" | "webtransport"; reason?: string }
   | { type: "joined"; room: string; seat: ArenaSeat; reconnectToken: string; region: string; tickRate: number; snapshotRate: number }
   | { type: "state"; started: boolean; serverTick: number; serverTime: number; ack: Record<ArenaSeat, number>; players: Record<ArenaSeat, ArenaPeer> }
   | { type: "shot"; seat: ArenaSeat; hit: boolean; health: number }
@@ -14,7 +14,7 @@ export type ArenaNetworkEvent =
   | { type: "metrics"; value: ArenaMetrics }
   | { type: "error"; message: string };
 
-type TransportHandlers = { open: () => void; message: (value: string) => void; error: () => void; close: () => void };
+type TransportHandlers = { open: () => void; message: (value: string) => void; error: () => void; close: (reason?: string) => void };
 interface ArenaTransport { readonly kind: "websocket" | "webtransport"; open(): void; send(value: string): void; close(): void; }
 
 interface WebTransportSession {
@@ -87,7 +87,7 @@ class WebSocketArenaTransport implements ArenaTransport {
     socket.onopen = this.handlers.open;
     socket.onmessage = event => this.handlers.message(typeof event.data === "string" ? event.data : "");
     socket.onerror = this.handlers.error;
-    socket.onclose = this.handlers.close;
+    socket.onclose = event => this.handlers.close(event.reason || (event.code ? `Socket closed (${event.code}).` : undefined));
   }
   send(value: string) { if (this.socket?.readyState === WebSocket.OPEN) this.socket.send(value); }
   close() { this.socket?.close(); this.socket = undefined; }
@@ -184,12 +184,12 @@ export class ArenaNetwork {
       open: () => { opened = true; this.metrics.transport = this.transport?.kind ?? "websocket"; this.listener?.({ type: "connection", status: "connected", transport: this.metrics.transport }); this.sendRaw(JSON.stringify(message), false); this.startPings(); this.emitMetrics(); },
       message: value => this.handleMessage(value),
       error: () => { if (!opened && webTransportUrl && !forceWebSocket) fallback(); else this.listener?.({ type: "error", message: "Arena connection failed." }); },
-      close: () => { if (!opened) { if (webTransportUrl && !forceWebSocket) fallback(); else this.listener?.({ type: "connection", status: "closed" }); return; } if (this.transport && !fallbackStarted) this.handleClose(message); },
+       close: reason => { if (!opened) { if (webTransportUrl && !forceWebSocket) fallback(); else this.listener?.({ type: "connection", status: "closed", reason }); return; } if (this.transport && !fallbackStarted) this.handleClose(message, reason); },
     };
     this.transport = webTransportUrl ? new WebTransportArenaTransport(webTransportUrl, handlers) : new WebSocketArenaTransport(socketUrl, handlers);
     this.transport.open();
   }
-  private handleClose(message: { type: "create" } | { type: "join"; room: string } | { type: "resume"; room: string; reconnectToken: string }) {
+  private handleClose(message: { type: "create" } | { type: "join"; room: string } | { type: "resume"; room: string; reconnectToken: string }, reason?: string) {
     this.transport = undefined; window.clearInterval(this.pingTimer);
     if (this.intentionalClose) return;
     if (this.room && this.reconnectToken && this.reconnectAttempts < 3) {
@@ -198,7 +198,7 @@ export class ArenaNetwork {
       this.retryTimer = window.setTimeout(() => this.open({ type: "resume", room: this.room!, reconnectToken: this.reconnectToken! }), this.reconnectAttempts * 1_000);
       return;
     }
-    this.listener?.({ type: "connection", status: "closed" });
+    this.listener?.({ type: "connection", status: "closed", reason });
   }
   private sendRaw(value: string, simulate = true) {
     const packet = JSON.parse(value) as { type?: string };
