@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { proceduralMaterial } from "./rendering";
 
 // Positions just behind the yard's crates and central divider, used by local AI.
 export const ironYardCoverPoints = [
@@ -6,9 +7,9 @@ export const ironYardCoverPoints = [
 ].map(([x, z]) => new THREE.Vector3(x, 0, z));
 
 export function buildIronYard(scene: THREE.Scene) {
-  const colliders: THREE.Box3[] = []; const concrete = new THREE.MeshStandardMaterial({ color: "#69716d", roughness: .82, metalness: .08 }); const rust = new THREE.MeshStandardMaterial({ color: "#6b4130", roughness: .68, metalness: .35 });
+  const colliders: THREE.Box3[] = []; const concrete = proceduralMaterial("concrete"); const brick = proceduralMaterial("brick"); const rust = new THREE.MeshStandardMaterial({ color: "#6b4130", roughness: .68, metalness: .35 });
   const box = (x:number,y:number,z:number,w:number,h:number,d:number, material=concrete) => { const mesh = new THREE.Mesh(new THREE.BoxGeometry(w,h,d), material); mesh.position.set(x,y,z); mesh.castShadow = mesh.receiveShadow = true; scene.add(mesh); colliders.push(new THREE.Box3().setFromObject(mesh)); };
-  const floor = new THREE.Mesh(new THREE.PlaneGeometry(46, 46), new THREE.MeshStandardMaterial({ color: "#454a47", roughness: .95 })); floor.rotation.x = -Math.PI / 2; floor.receiveShadow = true; scene.add(floor);
-  box(0,2,-22,46,4,1); box(0,2,22,46,4,1); box(-22,2,0,1,4,46); box(22,2,0,1,4,46); box(-9,1,-6,5,2,3,rust); box(8,1,4,5,2,3,rust); box(0,1,0,3,2,7); box(-7,1,10,3,2,3); box(10,1,-11,3,2,3);
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(46, 46), proceduralMaterial("concrete")); floor.rotation.x = -Math.PI / 2; floor.receiveShadow = true; scene.add(floor);
+  box(0,2,-22,46,4,1,brick); box(0,2,22,46,4,1,brick); box(-22,2,0,1,4,46,brick); box(22,2,0,1,4,46,brick); box(-9,1,-6,5,2,3,rust); box(8,1,4,5,2,3,rust); box(0,1,0,3,2,7); box(-7,1,10,3,2,3); box(10,1,-11,3,2,3);
   return colliders;
 }
