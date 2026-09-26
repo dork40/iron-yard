@@ -8,7 +8,7 @@ import { authority } from "./services/authority";
 import type { AiDifficulty, DuelResult, DirectGameMode, GameMode, LocalModeStats, MultiplayerGameMode, MultiplayerRound, PlayerProfile, Room, Round, RpsChoice } from "./types";
 
 type Page = "home" | "mode-select" | "game" | "multiplayer" | "how-to" | "profile";
-const appVersion = "3.4.2";
+const appVersion = "3.5.1";
 const root = document.querySelector<HTMLDivElement>("#app")!;
 const mobileViewport = window.matchMedia("(max-width: 700px)");
 let page: Page = "home";
@@ -365,9 +365,9 @@ function render() {
     if (difficultyNote) difficultyNote.textContent = "Trail Trace and Bottle Shot change Ash's simulated score; Quick Draw and Word Duel change reaction time. Ghost Challenge always uses your saved best.";
     if (mode === "arena-skirmish") {
       const header = root.querySelector(".page-header");
-      if (header) header.innerHTML = `<p class="eyebrow">LIVE MULTIPLAYER</p><h1>Iron Yard</h1><p>Create a private 1v1 room or join a friend's code. This mode does not use an AI rival.</p>`;
+      if (header) header.innerHTML = `<p class="eyebrow">DESKTOP FPS</p><h1>Iron Yard</h1><p>Start with an offline training bot or create a lightweight private 1v1 room.</p>`;
       const difficulty = root.querySelector<HTMLElement>(".difficulty-select");
-      if (difficulty) difficulty.innerHTML = `<p class="eyebrow">LIVE 1V1</p><h2>Ready To Enter?</h2><p>Choose your loadout after connecting to the arena server.</p><button class="primary start-ai-duel" id="start-ai-duel">ENTER LIVE ARENA</button>`;
+      if (difficulty) difficulty.innerHTML = `<p class="eyebrow">DESKTOP CONTROLS</p><h2>Ready To Enter?</h2><p>Choose a weapon in the yard. Training works without a server; create a room for 1v1.</p><button class="primary start-ai-duel" id="start-ai-duel">ENTER IRON YARD</button>`;
     }
   }
   if (page === "how-to") {

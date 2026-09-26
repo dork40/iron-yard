@@ -156,16 +156,21 @@ arenaWss.on("connection", (socket, request) => {
        const sx = shooter.x * 8, sz = 1 - shooter.z * 12;
        const tx = target.x * 8, tz = 1 - target.z * 12;
        const dx = tx - sx, dz = tz - sz;
-       const dirX = Math.sin(shot.data.yaw) * Math.cos(shot.data.pitch);
+       const dirX = -Math.sin(shot.data.yaw) * Math.cos(shot.data.pitch);
        const dirY = Math.sin(shot.data.pitch);
-       const dirZ = Math.cos(shot.data.yaw) * Math.cos(shot.data.pitch);
+       const dirZ = -Math.cos(shot.data.yaw) * Math.cos(shot.data.pitch);
        const along = dx * dirX + (1.05 - 1.72) * dirY + dz * dirZ;
        const distance = Math.hypot(dx - along * dirX, (1.05 - 1.72) - along * dirY, dz - along * dirZ);
        const spread = shot.data.loadout === "sidearm" ? .3 : .44;
        const hit = along > 0 && along < 32 && distance < spread;
-      if (hit) target.health = Math.max(0, target.health - (shot.data.loadout === "sidearm" ? 28 : 16));
-      broadcastArena(room, { type: "shot", seat, hit, health: target.health });
-      if (target.health === 0) { broadcastArena(room, { type: "result", winner: seat }); room.started = false; }
+       if (hit) target.health = Math.max(0, target.health - (shot.data.loadout === "sidearm" ? 28 : 16));
+       broadcastArena(room, { type: "shot", seat, hit, health: target.health });
+       if (target.health === 0) {
+         // Keep a casual room playable after a confirmed elimination instead of forcing a reconnect.
+         const spawn = targetSeat === "host" ? newArenaPlayer(-.18, .6, 2.75) : newArenaPlayer(.18, 1.18, -.4);
+         room.players[targetSeat] = spawn;
+         broadcastArena(room, { type: "respawn", seat: targetSeat, player: spawn });
+       }
     } catch { arenaSend(socket, { type: "error", message: "Malformed arena message." }); }
   });
   socket.on("close", () => {

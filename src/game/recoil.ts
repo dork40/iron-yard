@@ -1,0 +1,1 @@
+export class Recoil { pitch = 0; yaw = 0; kick(vertical: number, horizontal: number) { this.pitch += vertical; this.yaw += (Math.random() - .5) * horizontal; } update(dt: number) { this.pitch *= Math.max(0, 1 - dt * 13); this.yaw *= Math.max(0, 1 - dt * 13); } }

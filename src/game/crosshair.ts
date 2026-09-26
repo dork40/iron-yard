@@ -1,0 +1,2 @@
+import type { CrosshairSettings } from "./settings";
+export function paintCrosshair(node: HTMLElement, value: CrosshairSettings) { node.style.setProperty("--cross", value.color); node.style.setProperty("--cross-size", `${value.size}px`); node.style.setProperty("--cross-gap", `${value.gap}px`); node.style.setProperty("--cross-thickness", `${value.thickness}px`); node.dataset.dot = String(value.dot); node.dataset.outline = String(value.outline); }
