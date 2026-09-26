@@ -5,8 +5,8 @@ This is a deployable TURN credential issuer and authority-round foundation. It a
 ## Deploy
 
 1. Create a separate Node/Docker service on Render, Fly.io, Railway, or another long-running WebSocket-capable container host. Do not deploy this WebSocket service to Vercel, a static host, or a Vercel function runtime. Vercel can host only the frontend.
-2. Copy `.env.example` values into the host secret settings. Generate `TURN_SHARED_SECRET` and `TURN_TICKET_SECRET` independently with a password manager. Configure `TURN_SHARED_SECRET` as coturn's `static-auth-secret`; never place either secret in `VITE_` variables or browser storage.
-3. Set `ALLOWED_ORIGINS` to exact browser origins, for example `https://game.example`. Wildcards, paths, and trailing slashes are not accepted. Set `TURN_URLS` to public `turn:`/`turns:` coturn URLs and open the corresponding UDP/TCP relay ports in the coturn host firewall.
+2. Set `ALLOWED_ORIGINS` to the exact Vercel game origin. This is the only required setting for private arena rooms. TURN credentials are optional and require `TURN_SHARED_SECRET`, `TURN_URLS`, and `TURN_TICKET_SECRET`; never place those values in `VITE_` variables or browser storage.
+3. Wildcards, paths, and trailing slashes are not accepted in `ALLOWED_ORIGINS`. Add TURN URLs and secrets only when deploying coturn for optional relay support.
 4. Publish this service behind HTTPS. Build with `npm install && npm run build`, or run `docker build -t high-noon-authority .` followed by `docker run --env-file .env -p 8080:8080 high-noon-authority`. The image has a `/health` health check.
 5. Set `VITE_AUTHORITY_URL=https://authority.example` only when optional relay retrieval is needed. Set `VITE_ARENA_SERVER_URL=https://authority.example` in the browser build environment to enable Iron Yard 1v1.
 

@@ -14,7 +14,7 @@ const turnTicketSecret = process.env.TURN_TICKET_SECRET;
 const turnUrls = (process.env.TURN_URLS ?? "").split(",").map(value => value.trim()).filter(Boolean);
 const ttlSeconds = Math.min(3600, Math.max(60, Number(process.env.TURN_TTL_SECONDS ?? 600)));
 const validTurnUrls = turnUrls.length > 0 && turnUrls.every(url => /^turns?:\/\//i.test(url));
-if (process.env.NODE_ENV === "production" && (!origins.length || !turnSecret || !validTurnUrls || !turnTicketSecret)) throw new Error("Production requires exact allowed origins, a TURN secret, TURN URLs, and a ticket verifier secret.");
+if (process.env.NODE_ENV === "production" && !origins.length) throw new Error("Production requires exact allowed browser origins.");
 
 const app = express();
 app.disable("x-powered-by");
