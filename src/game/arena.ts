@@ -7,50 +7,156 @@ import { buildIronYard, ironYardCoverPoints } from "./maps";
 import { ArenaNetwork, arenaSocketUrl, type ArenaNetworkEvent } from "./networking";
 import { FpsPlayer } from "./player";
 import { Recoil } from "./recoil";
-import { applyGraphicsSettings, createFighter, createRenderer, createWeapon } from "./rendering";
-import { crosshairCode, graphicsPresets, importCrosshair, loadSettings, saveSettings, type BindingAction, type GraphicsQuality } from "./settings";
+import { applyGraphicsSettings, createFighter, createRenderer, createWeapon, triggerFighterFire, triggerWeaponFire, updateFighter, updateWeaponViewModel } from "./rendering";
+import { crosshairCode, defaultSettings, graphicsPresets, importCrosshair, loadSettings, saveSettings, type BindingAction, type GraphicsQuality } from "./settings";
 import { weapons, WeaponState, type WeaponId } from "./weapons";
 import { arenaView as arenaMenuView, updateArenaHud } from "./arena-ui";
 import { defaultArenaConfig, TacticalRound, type ArenaConfig } from "./arena-state";
 
 type ArenaResult = { won: boolean; accuracy: number; eliminations: number };
+type ArenaPanel = "buy" | "loadout" | "settings" | "pause";
 let stop: (() => void) | undefined;
+
 export function arenaView() { return arenaMenuView(Boolean(arenaSocketUrl()), defaultArenaConfig); }
 
 export function mountArena(_onComplete: (result: ArenaResult) => void) {
   stop?.();
-  const host = document.querySelector<HTMLElement>("#arena-canvas"), message = document.querySelector<HTMLElement>("#arena-message"), lock = document.querySelector<HTMLButtonElement>("#arena-lock"), health = document.querySelector<HTMLElement>("#arena-health"), ammo = document.querySelector<HTMLElement>("#arena-ammo"), rival = document.querySelector<HTMLElement>("#arena-rival"), phase = document.querySelector<HTMLElement>("#arena-phase"), cash = document.querySelector<HTMLElement>("#arena-cash"), score = document.querySelector<HTMLElement>("#arena-score"), reticle = document.querySelector<HTMLElement>("#arena-crosshair"), pause = document.querySelector<HTMLElement>("#arena-pause"), feedback = document.querySelector<HTMLElement>("#arena-feedback");
-  if (!host || !message || !lock || !health || !ammo || !rival || !phase || !cash || !score || !reticle || !pause || !feedback) return;
+  const host = document.querySelector<HTMLElement>("#arena-canvas"), message = document.querySelector<HTMLElement>("#arena-message"), lock = document.querySelector<HTMLButtonElement>("#arena-lock"), health = document.querySelector<HTMLElement>("#arena-health"), ammo = document.querySelector<HTMLElement>("#arena-ammo"), rival = document.querySelector<HTMLElement>("#arena-rival"), phase = document.querySelector<HTMLElement>("#arena-phase"), cash = document.querySelector<HTMLElement>("#arena-cash"), score = document.querySelector<HTMLElement>("#arena-score"), reticle = document.querySelector<HTMLElement>("#arena-crosshair"), pause = document.querySelector<HTMLElement>("#arena-pause"), feedback = document.querySelector<HTMLElement>("#arena-feedback"), buyCash = document.querySelector<HTMLElement>("#arena-buy-cash"), buyPhase = document.querySelector<HTMLElement>("#arena-buy-phase"), buyZone = document.querySelector<HTMLElement>("#arena-buy-zone"), buyRequirement = document.querySelector<HTMLElement>("#arena-buy-requirement");
+  if (!host || !message || !lock || !health || !ammo || !rival || !phase || !cash || !score || !reticle || !pause || !feedback || !buyCash || !buyPhase || !buyZone || !buyRequirement) return;
+
   const settings = loadSettings(), scene = new THREE.Scene(), camera = new THREE.PerspectiveCamera(settings.fov, 16 / 9, .05, 90), renderer = createRenderer(host, settings.graphics), colliders = buildIronYard(scene), player = new FpsPlayer(camera, colliders), weapon = new WeaponState(), recoil = new Recoil(), network = new ArenaNetwork(), tactical = new TacticalRound();
   scene.add(camera); scene.background = new THREE.Color("#9aabb0"); scene.fog = new THREE.Fog("#9aabb0", 24, 58); scene.add(new THREE.HemisphereLight("#dce9ed", "#343334", 2));
   const sun = new THREE.DirectionalLight("#ffe0bb", 3); sun.position.set(-10, 16, 8); sun.castShadow = settings.graphics.shadows; scene.add(sun);
-  let gun = createWeapon(camera, weapon.spec.id), bots: Bot[] = [], remote: THREE.Group | undefined, seat: "host" | "guest" | undefined, online = false, active = false, aiming = false, shots = 0, hits = 0, kills = 0, lastSync = 0, lastFrame = performance.now(), config: ArenaConfig = { ...defaultArenaConfig };
+  let gun = createWeapon(camera, weapon.spec.id), bots: Bot[] = [], remote: THREE.Group | undefined, seat: "host" | "guest" | undefined, online = false, active = false, aiming = false, shots = 0, hits = 0, kills = 0, lastSync = 0, lastFrame = performance.now(), config: ArenaConfig = { ...defaultArenaConfig }, openPanel: ArenaPanel | undefined, pausedAt = 0, binding: BindingAction | undefined;
   const owned = new Set<WeaponId>(["pistol"]);
   const raycaster = new THREE.Raycaster(), muzzle = new THREE.PointLight("#ffbd72", 0, 4); camera.add(muzzle);
-  const updateHud = (now = performance.now()) => updateArenaHud({ health, ammo, rival, phase, cash, score }, { health: player.health, ammo: weapon.reloading ? "RELOADING" : `${weapon.ammo} / ${weapon.reserve}`, rival: online ? "RIVAL LIVE" : `${bots.length} BOT${bots.length === 1 ? "" : "S"}`, phase: online ? "live" : tactical.phase, phaseLabel: online ? "ONLINE 1V1" : tactical.label(now), cash: tactical.cash, eliminations: tactical.eliminations, deaths: tactical.deaths });
-  const spawnBots = () => { bots.forEach(bot => scene.remove(bot.group)); bots = Array.from({ length: config.botCount }, (_, i) => { const group = createFighter(i ? "#405e6a" : "#6a4e47"); group.position.set(10 - i * 5, 0, -9 + i * 6); scene.add(group); const bot: Bot = { group, health: 100, velocity: new THREE.Vector3(), spawn: group.position.clone(), seed: 0x1a2b3c4d + i, lastSeen: group.position.clone(), nextDecision: 0, reactionUntil: 0, nextShot: 0, reloadUntil: 0, burstShots: 0, strafe: i % 2 ? -1 : 1 }; resetBot(bot, performance.now()); return bot; }); };
+  const inBuyZone = () => camera.position.distanceTo(new THREE.Vector3(-10, 1.7, 9)) < 7;
+  const panels: Record<ArenaPanel, HTMLElement> = {
+    buy: document.querySelector<HTMLElement>("#arena-buy-panel")!,
+    loadout: document.querySelector<HTMLElement>("#arena-loadout-panel")!,
+    settings: document.querySelector<HTMLElement>("#arena-settings-panel")!,
+    pause: document.querySelector<HTMLElement>("#arena-pause-panel")!,
+  };
+
+  const updateActionPanels = () => {
+    const canBuy = !online && tactical.canBuy(inBuyZone());
+    buyCash.textContent = `CASH $${tactical.cash}`;
+    buyPhase.textContent = online ? "ONLINE LOADOUT LOCKED" : `${tactical.phase.toUpperCase()} PHASE`;
+    buyZone.textContent = inBuyZone() ? "IN START ZONE" : "START ZONE REQUIRED";
+    buyRequirement.textContent = online ? "Private 1V1 loadouts are fixed for this compatible session." : canBuy ? "BUY OPEN: SELECT AN UNACQUIRED WEAPON." : tactical.phase !== "buy" ? "BUY LOCKED: WAIT FOR THE BUY PHASE." : "BUY LOCKED: RETURN TO THE START ZONE.";
+    document.querySelectorAll<HTMLButtonElement>("[data-weapon]").forEach(button => {
+      const id = button.dataset.weapon as WeaponId, spec = weapons[id], isOwned = owned.has(id), equipped = weapon.spec.id === id, purchasing = button.hasAttribute("data-arena-loadout");
+      const state = equipped ? "EQUIPPED" : isOwned ? "OWNED · EQUIP" : purchasing ? spec.price > tactical.cash ? `NEED $${spec.price - tactical.cash}` : canBuy ? "BUY" : "LOCKED" : "NOT OWNED";
+      button.querySelector("[data-weapon-state]")!.textContent = state;
+      button.disabled = purchasing ? !isOwned && (!canBuy || spec.price > tactical.cash) : !isOwned;
+      button.dataset.owned = String(isOwned);
+      button.dataset.equipped = String(equipped);
+    });
+  };
+  const updateHud = (now = performance.now()) => {
+    updateArenaHud({ health, ammo, rival, phase, cash, score }, { health: player.health, ammo: weapon.reloading ? "RELOADING" : `${weapon.ammo} / ${weapon.reserve}`, rival: online ? "RIVAL LIVE" : `${bots.length} BOT${bots.length === 1 ? "" : "S"}`, phase: online ? "live" : tactical.phase, phaseLabel: online ? "ONLINE 1V1" : tactical.label(now), cash: tactical.cash, eliminations: tactical.eliminations, deaths: tactical.deaths });
+    updateActionPanels();
+  };
+  const closePanel = () => {
+    if (!openPanel) return;
+    panels[openPanel].hidden = true;
+    openPanel = undefined;
+    if (pausedAt && !online) tactical.endsAt += performance.now() - pausedAt;
+    pausedAt = 0;
+    pause.hidden = document.pointerLockElement === renderer.domElement || !active;
+    updateHud();
+  };
+  const showPanel = (panel: ArenaPanel) => {
+    if (openPanel === panel) { closePanel(); return; }
+    if (openPanel) panels[openPanel].hidden = true;
+    if (!openPanel && active) pausedAt = performance.now();
+    openPanel = panel;
+    document.exitPointerLock?.();
+    panels[panel].hidden = false;
+    pause.hidden = true;
+    updateHud();
+  };
+  const spawnBots = () => { bots.forEach(bot => scene.remove(bot.group)); bots = Array.from({ length: config.botCount }, (_, i) => { const group = createFighter(i ? "#405e6a" : "#6a4e47", i % 2 ? "character-f" : "character-a"); group.position.set(10 - i * 5, 0, -9 + i * 6); scene.add(group); const bot: Bot = { group, health: 100, velocity: new THREE.Vector3(), spawn: group.position.clone(), seed: 0x1a2b3c4d + i, lastSeen: group.position.clone(), nextDecision: 0, reactionUntil: 0, nextShot: 0, reloadUntil: 0, burstShots: 0, strafe: i % 2 ? -1 : 1 }; resetBot(bot, performance.now()); return bot; }); };
   const deploy = (isOnline = false, drill = false) => { online = isOnline; if (online) { bots.forEach(bot => scene.remove(bot.group)); bots = []; } else { spawnBots(); tactical.start(performance.now()); if (drill) tactical.phase = "live"; } active = true; lock.hidden = false; document.querySelectorAll<HTMLButtonElement>("#arena-fire,#arena-reload,#arena-ads").forEach(button => button.disabled = false); message.textContent = online ? "RIVAL CONNECTED. CLICK TO DEPLOY." : drill ? "RECOIL DRILL LIVE. CONTROL THE PATTERN." : "WARMUP. BUY OPENS ON THE BELL."; updateHud(); };
   const tracer = (from: THREE.Vector3, to: THREE.Vector3) => { const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints([from, to]), new THREE.LineBasicMaterial({ color: "#ffd28a" })); scene.add(line); window.setTimeout(() => { scene.remove(line); line.geometry.dispose(); (line.material as THREE.Material).dispose(); }, 70); };
   const wallDistance = (from: THREE.Vector3, direction: THREE.Vector3) => { let nearest = Infinity; for (const box of colliders) { const point = new THREE.Vector3(); if (raycaster.ray.set(from, direction).intersectBox(box, point)) nearest = Math.min(nearest, point.distanceTo(from)); } return nearest; };
   const hitFeedback = (text: string) => { feedback.textContent = text; window.setTimeout(() => { feedback.textContent = ""; }, 380); };
-  const fire = () => { const now = performance.now(); if (!active || document.pointerLockElement !== renderer.domElement || !weapon.canFire(now) || (!online && tactical.phase === "round-end")) return; weapon.fired(now); shots++; recoil.kick(weapon.spec.recoil, weapon.spec.recoil * .55); muzzle.intensity = 5; window.setTimeout(() => muzzle.intensity = 0, 35); const origin = camera.position.clone(), direction = new THREE.Vector3(); camera.getWorldDirection(direction); direction.x += (Math.random() - .5) * weapon.spec.spread; direction.y += (Math.random() - .5) * weapon.spec.spread; direction.normalize(); raycaster.set(origin, direction); const wall = wallDistance(origin, direction), impacts = bots.flatMap(bot => { const hit = raycaster.intersectObject(bot.group, true)[0]; return hit && hit.distance < wall ? [{ bot, hit }] : []; }).sort((a, b) => a.hit.distance - b.hit.distance); const impact = impacts[0]?.hit.point ?? origin.clone().addScaledVector(direction, Math.min(wall, 35)); tracer(origin, impact); if (online) network.send({ type: "shot", loadout: weapon.spec.id === "pistol" ? "sidearm" : "carbine", yaw: player.yaw, pitch: player.pitch }); else if (impacts[0]) { const { bot, hit } = impacts[0]; bot.health -= hit.object.position.y > .9 ? weapon.spec.headshot : weapon.spec.damage; hits++; hitFeedback(hit.object.position.y > .9 ? "HEADSHOT" : "HIT"); playSound("impact"); if (bot.health <= 0) { kills++; tactical.elimination(); bot.health = 100; bot.group.position.copy(bot.spawn); resetBot(bot, now); message.textContent = "ELIMINATION. +$300. TARGET REDEPLOYED."; } } playSound(({ frontier: "frontier-shot", modern: "modern-shot", pistol: "pistol-shot" } as const)[weapon.spec.sound]); updateHud(now); };
+  const fire = () => { const now = performance.now(); if (!active || openPanel || document.pointerLockElement !== renderer.domElement || !weapon.canFire(now) || (!online && tactical.phase === "round-end")) return; weapon.fired(now); triggerWeaponFire(gun, now); shots++; recoil.kick(weapon.spec.recoil, weapon.spec.recoil * .55); muzzle.intensity = 5; window.setTimeout(() => muzzle.intensity = 0, 35); const origin = camera.position.clone(), direction = new THREE.Vector3(); camera.getWorldDirection(direction); direction.x += (Math.random() - .5) * weapon.spec.spread; direction.y += (Math.random() - .5) * weapon.spec.spread; direction.normalize(); raycaster.set(origin, direction); const wall = wallDistance(origin, direction), impacts = bots.flatMap(bot => { const hit = raycaster.intersectObject(bot.group, true)[0]; return hit && hit.distance < wall ? [{ bot, hit }] : []; }).sort((a, b) => a.hit.distance - b.hit.distance); const impact = impacts[0]?.hit.point ?? origin.clone().addScaledVector(direction, Math.min(wall, 35)); tracer(origin, impact); if (online) network.send({ type: "shot", loadout: weapon.spec.id === "pistol" ? "sidearm" : "carbine", yaw: player.yaw, pitch: player.pitch }); else if (impacts[0]) { const { bot, hit } = impacts[0], headshot = hit.point.y - bot.group.position.y > 1.35; bot.health -= headshot ? weapon.spec.headshot : weapon.spec.damage; hits++; hitFeedback(headshot ? "HEADSHOT" : "HIT"); playSound("impact"); if (bot.health <= 0) { kills++; tactical.elimination(); bot.health = 100; bot.group.position.copy(bot.spawn); resetBot(bot, now); message.textContent = "ELIMINATION. +$300. TARGET REDEPLOYED."; } } playSound(({ frontier: "frontier-shot", modern: "modern-shot", pistol: "pistol-shot" } as const)[weapon.spec.sound]); updateHud(now); };
   const input = new DesktopInput(renderer.domElement, (x, y) => player.look(x, y, settings.sensitivity), fire, () => aiming = !aiming, settings.bindings);
-  const request = () => { if (active) renderer.domElement.requestPointerLock().catch(() => message.textContent = "POINTER LOCK WAS BLOCKED. CLICK AGAIN."); };
+  const request = () => { if (active && !openPanel) renderer.domElement.requestPointerLock().catch(() => message.textContent = "POINTER LOCK WAS BLOCKED. CLICK AGAIN."); };
   const resize = () => { const bounds = host.getBoundingClientRect(); renderer.setSize(bounds.width, bounds.height, false); camera.aspect = bounds.width / bounds.height; camera.updateProjectionMatrix(); };
   const observer = new ResizeObserver(resize); observer.observe(host); resize(); paintCrosshair(reticle, settings.crosshair);
-  const reload = () => weapon.reload(() => { playSound("reload"); updateHud(); });
+  const reload = () => { if (!openPanel) weapon.reload(() => { playSound("reload"); updateHud(); }); };
+  const equip = (id: WeaponId) => { weapon.select(id); camera.remove(gun); gun = createWeapon(camera, id); message.textContent = `${weapons[id].name} EQUIPPED.`; updateHud(); };
+  const buy = (id: WeaponId) => { if (!owned.has(id)) { const notice = tactical.buy(id, weapons[id].price, owned, inBuyZone()); if (notice) { message.textContent = notice; updateHud(); return; } message.textContent = `${weapons[id].name} PURCHASED.`; } equip(id); };
   const applySpawn = (value: { x: number; z: number; yaw: number; pitch: number; health: number }) => { camera.position.set(value.x * 8, 1.7, 1 - value.z * 12); player.yaw = value.yaw; player.pitch = value.pitch; player.velocity.set(0, 0, 0); player.health = value.health; };
-  const handleNetwork = (event: ArenaNetworkEvent) => { if (event.type === "joined") { seat = event.seat; message.textContent = `ROOM ${event.room}. WAITING FOR RIVAL.`; } if (event.type === "state" && event.started && !active) deploy(true); if (event.type === "state" && active && seat) { const own = event.players[seat], other = event.players[seat === "host" ? "guest" : "host"]; if (!remote) { remote = createFighter("#405e6a"); scene.add(remote); applySpawn(own); } remote.position.lerp(new THREE.Vector3(other.x * 8, 0, 1 - other.z * 12), .35); player.health = own.health; updateHud(); } if (event.type === "shot") { hitFeedback(event.hit ? "HIT CONFIRMED" : "SHOT WIDE"); } if (event.type === "respawn") { if (event.seat === seat) applySpawn(event.player); message.textContent = event.seat === seat ? "YOU RESPAWNED" : "RIVAL RESPAWNED"; } if (event.type === "opponent-left") { active = false; message.textContent = "RIVAL LEFT THE YARD."; } if (event.type === "error") message.textContent = event.message; };
-  const buy = (id: WeaponId) => { const alreadyOwned = owned.has(id); const notice = tactical.buy(id, weapons[id].price, owned, camera.position.distanceTo(new THREE.Vector3(-10, 1.7, 9)) < 7); if (notice && !alreadyOwned) { message.textContent = notice; return; } weapon.select(id); camera.remove(gun); gun = createWeapon(camera, id); document.querySelectorAll("[data-arena-loadout]").forEach(item => item.setAttribute("aria-pressed", String((item as HTMLElement).dataset.arenaLoadout === id))); message.textContent = `${weapons[id].name} EQUIPPED.`; updateHud(); };
-  const onKeyDown = (event: KeyboardEvent) => { if (event.code === settings.bindings.reload) reload(); };
-  const onLockChange = () => { pause.hidden = document.pointerLockElement === renderer.domElement || !active; lock.hidden = document.pointerLockElement === renderer.domElement; };
+  const handleNetwork = (event: ArenaNetworkEvent) => { if (event.type === "joined") { seat = event.seat; message.textContent = `ROOM ${event.room}. WAITING FOR RIVAL.`; } if (event.type === "state" && event.started && !active) deploy(true); if (event.type === "state" && active && seat) { const own = event.players[seat], other = event.players[seat === "host" ? "guest" : "host"]; if (!remote) { remote = createFighter("#405e6a", "character-k"); scene.add(remote); applySpawn(own); } remote.position.lerp(new THREE.Vector3(other.x * 8, 0, 1 - other.z * 12), .35); remote.rotation.y = other.yaw + Math.PI; player.health = own.health; updateHud(); } if (event.type === "shot") { if (event.seat !== seat && remote) triggerFighterFire(remote, performance.now()); hitFeedback(event.hit ? "HIT CONFIRMED" : "SHOT WIDE"); } if (event.type === "respawn") { if (event.seat === seat) applySpawn(event.player); message.textContent = event.seat === seat ? "YOU RESPAWNED" : "RIVAL RESPAWNED"; } if (event.type === "opponent-left") { active = false; message.textContent = "RIVAL LEFT THE YARD."; } if (event.type === "error") message.textContent = event.message; };
+  const onLockChange = () => { const locked = document.pointerLockElement === renderer.domElement; pause.hidden = locked || !active || Boolean(openPanel); lock.hidden = locked; };
+  const syncSettingsControls = () => {
+    const sensitivity = document.querySelector<HTMLInputElement>("#fps-sensitivity"), sensitivityValue = document.querySelector<HTMLOutputElement>("#fps-sensitivity-value"), color = document.querySelector<HTMLInputElement>("#cross-color"), size = document.querySelector<HTMLInputElement>("#cross-size"), quality = document.querySelector<HTMLSelectElement>("#graphics-quality"), pixelRatio = document.querySelector<HTMLInputElement>("#graphics-pixel-ratio"), shadows = document.querySelector<HTMLInputElement>("#graphics-shadows");
+    if (sensitivity) sensitivity.value = String(settings.sensitivity); if (sensitivityValue) sensitivityValue.value = settings.sensitivity.toFixed(4); if (color) color.value = settings.crosshair.color; if (size) size.value = String(settings.crosshair.size); if (quality) quality.value = settings.graphics.quality; if (pixelRatio) pixelRatio.value = String(settings.graphics.pixelRatio); if (shadows) shadows.checked = settings.graphics.shadows;
+    document.querySelectorAll<HTMLButtonElement>("[data-bind]").forEach(button => { const action = button.dataset.bind as BindingAction; button.querySelector("b")!.textContent = settings.bindings[action].replace("Key", ""); });
+  };
+  const graphics = () => { applyGraphicsSettings(renderer, settings.graphics); sun.castShadow = settings.graphics.shadows; resize(); saveSettings(settings); };
+  const sensitivity = document.querySelector<HTMLInputElement>("#fps-sensitivity"), sensitivityValue = document.querySelector<HTMLOutputElement>("#fps-sensitivity-value"), color = document.querySelector<HTMLInputElement>("#cross-color"), size = document.querySelector<HTMLInputElement>("#cross-size"), quality = document.querySelector<HTMLSelectElement>("#graphics-quality"), pixelRatio = document.querySelector<HTMLInputElement>("#graphics-pixel-ratio"), shadows = document.querySelector<HTMLInputElement>("#graphics-shadows");
+  if (sensitivity) sensitivity.oninput = () => { settings.sensitivity = Number(sensitivity.value); if (sensitivityValue) sensitivityValue.value = settings.sensitivity.toFixed(4); saveSettings(settings); };
+  if (color) color.oninput = () => { settings.crosshair.color = color.value; paintCrosshair(reticle, settings.crosshair); saveSettings(settings); };
+  if (size) size.oninput = () => { settings.crosshair.size = Number(size.value); paintCrosshair(reticle, settings.crosshair); saveSettings(settings); };
+  if (quality) quality.onchange = () => { settings.graphics = { ...graphicsPresets[quality.value as GraphicsQuality] }; graphics(); };
+  if (pixelRatio) pixelRatio.oninput = () => { settings.graphics.pixelRatio = Number(pixelRatio.value); graphics(); };
+  if (shadows) shadows.onchange = () => { settings.graphics.shadows = shadows.checked; graphics(); };
+  document.querySelector("#settings-reset")?.addEventListener("click", () => { const defaults = structuredClone(defaultSettings); settings.sensitivity = defaults.sensitivity; settings.fov = defaults.fov; Object.assign(settings.crosshair, defaults.crosshair); Object.assign(settings.graphics, defaults.graphics); Object.assign(settings.bindings, defaults.bindings); paintCrosshair(reticle, settings.crosshair); graphics(); syncSettingsControls(); document.querySelector("#binding-notice")!.textContent = "DEFAULT SETTINGS RESTORED."; });
+  document.querySelector("#cross-share")?.addEventListener("click", () => navigator.clipboard?.writeText(crosshairCode(settings.crosshair)));
+  document.querySelector<HTMLInputElement>("#cross-import")?.addEventListener("change", event => { const value = importCrosshair((event.target as HTMLInputElement).value); if (value) { settings.crosshair = value; paintCrosshair(reticle, value); saveSettings(settings); syncSettingsControls(); } });
+  syncSettingsControls(); updateHud();
   document.querySelector("#arena-bot")?.addEventListener("click", () => { config = { difficulty: document.querySelector<HTMLSelectElement>("#arena-difficulty")?.value as ArenaConfig["difficulty"] ?? "standard", botCount: Number(document.querySelector<HTMLSelectElement>("#arena-bot-count")?.value ?? 1) as ArenaConfig["botCount"] }; deploy(); });
-  document.querySelector("#arena-drill")?.addEventListener("click", () => deploy(false, true)); document.querySelector("#arena-create")?.addEventListener("click", () => { if (network.connect("create", "", handleNetwork)) message.textContent = "CREATING ROOM..."; }); document.querySelector("#arena-join")?.addEventListener("click", () => { const code = document.querySelector<HTMLInputElement>("#arena-room-code")?.value.trim().toUpperCase() ?? ""; if (code.length === 6 && network.connect("join", code, handleNetwork)) message.textContent = "JOINING ROOM..."; });
-  document.querySelectorAll<HTMLButtonElement>("[data-arena-loadout]").forEach(button => button.addEventListener("click", () => buy(button.dataset.arenaLoadout as WeaponId))); document.querySelector("#arena-fire")?.addEventListener("click", fire); document.querySelector("#arena-reload")?.addEventListener("click", reload); document.querySelector("#arena-ads")?.addEventListener("click", () => aiming = !aiming); lock.addEventListener("click", request); renderer.domElement.addEventListener("click", request); renderer.domElement.addEventListener("contextmenu", event => event.preventDefault()); document.addEventListener("keydown", onKeyDown); document.addEventListener("pointerlockchange", onLockChange);
-  let binding: BindingAction | undefined; document.querySelectorAll<HTMLButtonElement>("[data-bind]").forEach(button => { const action = button.dataset.bind as BindingAction; button.querySelector("b")!.textContent = settings.bindings[action].replace("Key", ""); button.addEventListener("click", () => { binding = action; document.querySelector("#binding-notice")!.textContent = `PRESS A KEY FOR ${action.toUpperCase()}.`; }); }); document.addEventListener("keydown", event => { if (!binding) return; const conflict = Object.entries(settings.bindings).find(([action, key]) => action !== binding && key === event.code); if (conflict) document.querySelector("#binding-notice")!.textContent = `${event.code.replace("Key", "")} IS ALREADY ${conflict[0].toUpperCase()}.`; else { settings.bindings[binding] = event.code; saveSettings(settings); document.querySelector(`[data-bind="${binding}"] b`)!.textContent = event.code.replace("Key", ""); document.querySelector("#binding-notice")!.textContent = "BINDING SAVED."; } binding = undefined; });
-  const sensitivity = document.querySelector<HTMLInputElement>("#fps-sensitivity"), color = document.querySelector<HTMLInputElement>("#cross-color"), size = document.querySelector<HTMLInputElement>("#cross-size"), quality = document.querySelector<HTMLSelectElement>("#graphics-quality"), pixelRatio = document.querySelector<HTMLInputElement>("#graphics-pixel-ratio"), shadows = document.querySelector<HTMLInputElement>("#graphics-shadows"); const graphics = () => { applyGraphicsSettings(renderer, settings.graphics); sun.castShadow = settings.graphics.shadows; resize(); saveSettings(settings); }; if (sensitivity) { sensitivity.value = String(settings.sensitivity); sensitivity.oninput = () => { settings.sensitivity = Number(sensitivity.value); saveSettings(settings); }; } if (color) { color.value = settings.crosshair.color; color.oninput = () => { settings.crosshair.color = color.value; paintCrosshair(reticle, settings.crosshair); saveSettings(settings); }; } if (size) { size.value = String(settings.crosshair.size); size.oninput = () => { settings.crosshair.size = Number(size.value); paintCrosshair(reticle, settings.crosshair); saveSettings(settings); }; } if (quality) { quality.value = settings.graphics.quality; quality.onchange = () => { settings.graphics = { ...graphicsPresets[quality.value as GraphicsQuality] }; graphics(); }; } if (pixelRatio) { pixelRatio.value = String(settings.graphics.pixelRatio); pixelRatio.oninput = () => { settings.graphics.pixelRatio = Number(pixelRatio.value); graphics(); }; } if (shadows) { shadows.checked = settings.graphics.shadows; shadows.onchange = () => { settings.graphics.shadows = shadows.checked; graphics(); }; } document.querySelector("#cross-share")?.addEventListener("click", () => navigator.clipboard?.writeText(crosshairCode(settings.crosshair))); document.querySelector<HTMLInputElement>("#cross-import")?.addEventListener("change", event => { const value = importCrosshair((event.target as HTMLInputElement).value); if (value) { settings.crosshair = value; paintCrosshair(reticle, value); saveSettings(settings); } });
-  let raf = 0; const frame = (now: number) => { const dt = Math.min(.05, (now - lastFrame) / 1000); lastFrame = now; if (active) { if (!online) tactical.tick(now); player.update(dt, input); if (input.firing && weapon.spec.automatic) fire(); recoil.update(dt); gun.rotation.x = -recoil.pitch; gun.rotation.y = recoil.yaw; const targetFov = aiming ? 58 : settings.fov; camera.fov += (targetFov - camera.fov) * Math.min(1, dt * 12); camera.updateProjectionMatrix(); const botDifficulty = config.difficulty === "rookie" ? "easy" : config.difficulty === "veteran" ? "hard" : "normal"; bots.forEach(bot => updateBot(bot, camera.position, now, dt, colliders, ironYardCoverPoints, (from, direction) => { if (tactical.phase !== "live") return; raycaster.set(from, direction); const body = camera.position.clone(); body.y -= .45; const along = body.sub(from).dot(direction); if (along > 0 && along < wallDistance(from, direction)) { player.health = Math.max(0, player.health - 12); hitFeedback("DAMAGE"); if (!player.health) { player.health = 100; tactical.death(); camera.position.set(-10, 1.7, 9); message.textContent = "RESPAWNED. -$300."; } } }, botDifficulty)); if (online && now - lastSync > 67) { lastSync = now; network.send({ type: "state", x: camera.position.x / 8, z: (1 - camera.position.z) / 12, yaw: player.yaw, pitch: player.pitch }); } updateHud(now); } renderer.render(scene, camera); raf = requestAnimationFrame(frame); }; raf = requestAnimationFrame(frame);
+  document.querySelector("#arena-drill")?.addEventListener("click", () => deploy(false, true));
+  document.querySelector("#arena-create")?.addEventListener("click", () => { if (network.connect("create", "", handleNetwork)) message.textContent = "CREATING ROOM..."; });
+  document.querySelector("#arena-join")?.addEventListener("click", () => { const code = document.querySelector<HTMLInputElement>("#arena-room-code")?.value.trim().toUpperCase() ?? ""; if (code.length === 6 && network.connect("join", code, handleNetwork)) message.textContent = "JOINING ROOM..."; });
+  document.querySelectorAll<HTMLButtonElement>("[data-arena-panel]").forEach(button => button.addEventListener("click", () => showPanel(button.dataset.arenaPanel as ArenaPanel)));
+  document.querySelectorAll<HTMLButtonElement>("[data-arena-close]").forEach(button => button.addEventListener("click", closePanel));
+  document.querySelectorAll<HTMLButtonElement>("[data-arena-loadout]").forEach(button => button.addEventListener("click", () => buy(button.dataset.arenaLoadout as WeaponId)));
+  document.querySelectorAll<HTMLButtonElement>("[data-arena-equip]").forEach(button => button.addEventListener("click", () => { const id = button.dataset.arenaEquip as WeaponId; if (owned.has(id)) equip(id); }));
+  document.querySelector("#arena-return-panel")?.addEventListener("click", () => document.querySelector<HTMLButtonElement>("#arena-return")?.click());
+  lock.addEventListener("click", request); renderer.domElement.addEventListener("click", request); renderer.domElement.addEventListener("contextmenu", event => event.preventDefault());
+  const onKeyDown = (event: KeyboardEvent) => {
+    if (binding) { const conflict = Object.entries(settings.bindings).find(([action, key]) => action !== binding && key === event.code); if (conflict) document.querySelector("#binding-notice")!.textContent = `${event.code.replace("Key", "")} IS ALREADY ${conflict[0].toUpperCase()}.`; else { settings.bindings[binding] = event.code; saveSettings(settings); syncSettingsControls(); document.querySelector("#binding-notice")!.textContent = "BINDING SAVED."; } binding = undefined; event.preventDefault(); return; }
+    if (event.code === "Escape") { if (document.pointerLockElement === renderer.domElement) document.exitPointerLock?.(); else closePanel(); event.preventDefault(); return; }
+    if (event.code === "KeyB" && !event.repeat) { showPanel("buy"); event.preventDefault(); return; }
+    if (event.code === settings.bindings.reload && document.pointerLockElement === renderer.domElement) reload();
+  };
+  document.querySelectorAll<HTMLButtonElement>("[data-bind]").forEach(button => button.addEventListener("click", () => { binding = button.dataset.bind as BindingAction; document.querySelector("#binding-notice")!.textContent = `PRESS A KEY FOR ${binding.toUpperCase()}.`; }));
+  document.addEventListener("keydown", onKeyDown); document.addEventListener("pointerlockchange", onLockChange);
+  let raf = 0;
+  const frame = (now: number) => {
+    const dt = Math.min(.05, (now - lastFrame) / 1000); lastFrame = now;
+    if (active && !openPanel) {
+      if (!online) tactical.tick(now);
+      if (document.pointerLockElement === renderer.domElement) player.update(dt, input);
+      if (input.firing && weapon.spec.automatic) fire();
+      recoil.update(dt); gun.rotation.x = -recoil.pitch; gun.rotation.y = recoil.yaw;
+      updateWeaponViewModel(gun, now, player.velocity.length(), aiming, weapon.reloadProgress(now));
+      const targetFov = aiming ? 58 : settings.fov; camera.fov += (targetFov - camera.fov) * Math.min(1, dt * 12); camera.updateProjectionMatrix();
+      const botDifficulty = config.difficulty === "rookie" ? "easy" : config.difficulty === "veteran" ? "hard" : "normal";
+      bots.forEach(bot => updateBot(bot, camera.position, now, dt, colliders, ironYardCoverPoints, (from, direction) => {
+        if (tactical.phase !== "live") return;
+        triggerFighterFire(bot.group, now); raycaster.set(from, direction);
+        const body = camera.position.clone(); body.y -= .45; const along = body.sub(from).dot(direction);
+        if (along > 0 && along < wallDistance(from, direction)) {
+          player.health = Math.max(0, player.health - 12); hitFeedback("DAMAGE");
+          if (!player.health) { player.health = 100; tactical.death(); camera.position.set(-10, 1.7, 9); message.textContent = "RESPAWNED. -$300."; }
+        }
+      }, botDifficulty));
+      bots.forEach(bot => updateFighter(bot.group, dt, now));
+      if (remote) updateFighter(remote, dt, now);
+      if (online && now - lastSync > 67) { lastSync = now; network.send({ type: "state", x: camera.position.x / 8, z: (1 - camera.position.z) / 12, yaw: player.yaw, pitch: player.pitch }); }
+      updateHud(now);
+    }
+    renderer.render(scene, camera); raf = requestAnimationFrame(frame);
+  };
+  raf = requestAnimationFrame(frame);
   stop = () => { cancelAnimationFrame(raf); network.close(); input.destroy(); observer.disconnect(); document.exitPointerLock?.(); document.removeEventListener("keydown", onKeyDown); document.removeEventListener("pointerlockchange", onLockChange); renderer.dispose(); host.replaceChildren(); stop = undefined; };
   return stop;
 }
+
 export function unmountArena() { stop?.(); }

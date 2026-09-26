@@ -8,9 +8,10 @@ export const weapons: Record<WeaponId, WeaponSpec> = {
 };
 
 export class WeaponState {
-  spec: WeaponSpec = weapons.pistol; ammo = this.spec.magazine; reserve = this.spec.reserve; reloading = false; private lastShot = 0;
+  spec: WeaponSpec = weapons.pistol; ammo = this.spec.magazine; reserve = this.spec.reserve; reloading = false; private lastShot = 0; private reloadStartedAt = 0;
   select(id: WeaponId) { this.spec = weapons[id]; this.ammo = this.spec.magazine; this.reserve = this.spec.reserve; }
   canFire(now: number) { return !this.reloading && this.ammo > 0 && now - this.lastShot >= this.spec.fireMs; }
   fired(now: number) { this.lastShot = now; this.ammo--; }
-  reload(done: () => void) { if (this.reloading || this.ammo === this.spec.magazine || !this.reserve) return; this.reloading = true; window.setTimeout(() => { const add = Math.min(this.spec.magazine - this.ammo, this.reserve); this.ammo += add; this.reserve -= add; this.reloading = false; done(); }, this.spec.reloadMs); }
+  reloadProgress(now: number) { return this.reloading ? Math.min(1, (now - this.reloadStartedAt) / this.spec.reloadMs) : 0; }
+  reload(done: () => void) { if (this.reloading || this.ammo === this.spec.magazine || !this.reserve) return; this.reloading = true; this.reloadStartedAt = performance.now(); window.setTimeout(() => { const add = Math.min(this.spec.magazine - this.ammo, this.reserve); this.ammo += add; this.reserve -= add; this.reloading = false; done(); }, this.spec.reloadMs); }
 }
