@@ -111,9 +111,13 @@ export function updateWeaponViewModel(group: THREE.Group, now: number, speed: nu
 
 export function createFighter(color = "#4e6670", variant: FighterVariant = "character-a") {
   const group = new THREE.Group() as FighterHost, motion = new THREE.Group(), fallback = new THREE.Group();
-  const cloth = new THREE.MeshStandardMaterial({ color, roughness: .8 }), skin = new THREE.MeshStandardMaterial({ color: "#8e614a", roughness: .9 });
-  const body = new THREE.Mesh(new THREE.CapsuleGeometry(.34, .8, 5, 8), cloth), head = new THREE.Mesh(new THREE.SphereGeometry(.23, 12, 8), skin);
-  body.position.y = .85; head.position.y = 1.58; fallback.add(body, head); motion.add(fallback); group.add(motion);
+  const cloth = new THREE.MeshBasicMaterial({ color, toneMapped: false }), skin = new THREE.MeshBasicMaterial({ color: "#bd8263", toneMapped: false }), helmet = new THREE.MeshBasicMaterial({ color: "#d8c29a", toneMapped: false }), weapon = new THREE.MeshBasicMaterial({ color: "#202d32", toneMapped: false });
+  const body = new THREE.Mesh(new THREE.CapsuleGeometry(.34, .72, 5, 8), cloth), head = new THREE.Mesh(new THREE.SphereGeometry(.22, 12, 8), skin), helmetShell = new THREE.Mesh(new THREE.SphereGeometry(.25, 12, 8, 0, Math.PI * 2, 0, Math.PI / 2), helmet), helmetBrim = new THREE.Mesh(new THREE.CylinderGeometry(.3, .3, .055, 12), helmet), rifle = new THREE.Mesh(new THREE.BoxGeometry(.105, .12, .62), weapon);
+  body.position.y = .72; head.position.y = 1.35; helmetShell.position.y = 1.45; helmetBrim.position.y = 1.46; rifle.position.set(.4, .9, -.12); rifle.rotation.z = -.22;
+  fallback.add(body, head, helmetShell, helmetBrim, rifle);
+  // The silhouette remains behind valid GLBs, so an asset or image failure cannot remove a gameplay target.
+  fallback.traverse(item => { if (item instanceof THREE.Mesh) item.raycast = () => undefined; });
+  motion.add(fallback); group.add(motion);
   // These retain stable combat raycasts even when a model's individual mesh layout differs.
   const hitboxMaterial = new THREE.MeshBasicMaterial({ colorWrite: false });
   const hitBody = new THREE.Mesh(new THREE.CapsuleGeometry(.34, .8, 5, 8), hitboxMaterial), hitHead = new THREE.Mesh(new THREE.SphereGeometry(.23, 12, 8), hitboxMaterial);
@@ -121,27 +125,32 @@ export function createFighter(color = "#4e6670", variant: FighterVariant = "char
   const state: FighterState = { fallback, motion, hasClip: false, phase: Math.random() * Math.PI * 2, lastPosition: group.position.clone(), firingUntil: 0 };
   group.userData.fighter = state;
   loadFighterAsset(variant).then(gltf => {
-    const model = cloneSkeleton(gltf.scene); const bounds = new THREE.Box3().setFromObject(model), height = Math.max(.001, bounds.max.y - bounds.min.y), scale = 1.72 / height;
-    model.scale.setScalar(scale); model.position.y = -bounds.min.y * scale;
+    const model = cloneSkeleton(gltf.scene);
+    model.updateMatrixWorld(true);
+    const bounds = new THREE.Box3().setFromObject(model), size = bounds.getSize(new THREE.Vector3()), center = bounds.getCenter(new THREE.Vector3());
+    if (bounds.isEmpty() || !Number.isFinite(size.y) || size.y <= .001) throw new Error("Character GLB has no usable height");
+    const scale = 1.72 / size.y;
+    if (!Number.isFinite(scale) || scale <= 0) throw new Error("Character GLB has an invalid scale");
+    model.scale.setScalar(scale); model.position.set(-center.x * scale, -bounds.min.y * scale, -center.z * scale);
     let meshes = 0, texturedMeshes = 0, fallbackMaterials = 0;
     model.traverse(item => {
-      if (!(item instanceof THREE.Mesh)) return;
+      if (!(item instanceof THREE.Mesh) || !item.geometry.getAttribute("position")?.count) return;
       meshes++; item.castShadow = true; item.receiveShadow = true;
       const materials = Array.isArray(item.material) ? item.material : [item.material];
       item.material = materials.map(source => {
-        const material = source.clone() as THREE.Material & { map?: THREE.Texture; vertexColors?: boolean };
-        const hasMap = Boolean(material.map?.source.data);
-        if (material.map) { material.map.colorSpace = THREE.SRGBColorSpace; if (hasMap) texturedMeshes++; }
-        if (material.vertexColors && !item.geometry.getAttribute("color")) material.vertexColors = false;
-        if (material instanceof THREE.MeshStandardMaterial) {
-          if (!hasMap) { material.color.set("#b9a992"); fallbackMaterials++; }
-          material.emissive.setRGB(.025, .025, .025);
-        }
-        material.needsUpdate = true;
-        return material;
+        const sourceMaterial = source as THREE.Material & { map?: THREE.Texture; color?: THREE.Color; vertexColors?: boolean };
+        const hasMap = Boolean(sourceMaterial.map?.source.data);
+        if (sourceMaterial.map) { sourceMaterial.map.colorSpace = THREE.SRGBColorSpace; if (hasMap) texturedMeshes++; }
+        if (!hasMap) fallbackMaterials++;
+        return new THREE.MeshBasicMaterial({ map: sourceMaterial.map, color: sourceMaterial.color ?? "#b9a992", side: THREE.DoubleSide, vertexColors: Boolean(sourceMaterial.vertexColors && item.geometry.getAttribute("color")), toneMapped: false });
       }) as THREE.Material | THREE.Material[];
+      item.frustumCulled = false;
     });
-    state.motion.remove(state.fallback); state.motion.add(model);
+    if (!meshes) throw new Error("Character GLB has no renderable meshes");
+    model.updateMatrixWorld(true);
+    const fittedHeight = new THREE.Box3().setFromObject(model).getSize(new THREE.Vector3()).y;
+    if (!Number.isFinite(fittedHeight) || fittedHeight < 1.5 || fittedHeight > 1.95) throw new Error("Character GLB could not be fitted to fighter height");
+    state.motion.add(model);
     console.info("[Iron Yard] Textured character loaded", { variant, meshes, texturedMeshes, fallbackMaterials });
     if (gltf.animations.length) { state.mixer = new THREE.AnimationMixer(model); state.mixer.clipAction(gltf.animations[0]).play(); state.hasClip = true; }
   }).catch(error => { console.warn("[Iron Yard] Character GLB failed; retaining fallback", { variant, error }); });

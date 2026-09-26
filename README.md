@@ -1,10 +1,10 @@
 # High Noon Showdown
 
-High Noon Showdown v3.9.1 is an original Wild West browser game with local player progression, synthesized Web Audio effects, an AI-only Ghost Challenge personal-best race, casual multiplayer, and Iron Yard: a normal desktop browser FPS vertical slice. Iron Yard uses locally bundled CC0 Kenney character assets; its maps, weapons, sounds, dialogue, and branding remain original.
+High Noon Showdown v3.9.2 is an original Wild West browser game with local player progression, synthesized Web Audio effects, an AI-only Ghost Challenge personal-best race, casual multiplayer, and Iron Yard: a normal desktop browser FPS vertical slice. Iron Yard uses locally bundled CC0 Kenney character assets; its maps, weapons, sounds, dialogue, and branding remain original.
 
-## v3.9.1 Iron Yard Visibility And Fullscreen
+## v3.9.2 Iron Yard Bot Visibility And Fullscreen
 
-Iron Yard now has an in-frame **IRON YARD FULLSCREEN** action (`F`) that fullscreen-targets only the arena shell and keeps the canvas and combat HUD usable. The original first-person weapon meshes retain the existing local wood and metal albedo maps with clearer UV placement; the Ranger Pistol now has visibly separate textured wood-grip and metal-receiver geometry. Imported Kenney GLB materials are diagnosed in the console on swap, normalize base-color maps to sRGB, and avoid black rendering when vertex colors or a texture are unavailable.
+Iron Yard now has an in-frame **IRON YARD FULLSCREEN** action (`F`) that fullscreen-targets only the arena shell and keeps the canvas and combat HUD usable. The original first-person weapon meshes retain the existing local wood and metal albedo maps with clearer UV placement; the Ranger Pistol now has visibly separate textured wood-grip and metal-receiver geometry. Gameplay bots keep an unlit stylized body, helmet, and weapon silhouette while locally hosted Kenney GLBs load. Valid GLBs are centered, floor-fitted, double-sided, and use their base-color maps without depending on scene lighting, so model, texture, camera, or material differences cannot make a bot disappear.
 
 ## Previous: Textured Fighter And Weapon Motion
 
