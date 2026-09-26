@@ -1,8 +1,12 @@
 # High Noon Showdown
 
-High Noon Showdown v3.9.2 is an original Wild West browser game with local player progression, synthesized Web Audio effects, an AI-only Ghost Challenge personal-best race, casual multiplayer, and Iron Yard: a normal desktop browser FPS vertical slice. Iron Yard uses locally bundled CC0 Kenney character assets; its maps, weapons, sounds, dialogue, and branding remain original.
+High Noon Showdown v4.0.0 is an original Wild West browser game with local player progression, synthesized Web Audio effects, an AI-only Ghost Challenge personal-best race, casual multiplayer, and Iron Yard: a normal desktop browser FPS vertical slice. Iron Yard uses locally bundled CC0 Kenney character assets; its maps, weapons, sounds, dialogue, and branding remain original.
 
-## v3.9.2 Iron Yard Bot Visibility And Fullscreen
+## v4.0.0 Iron Yard Buy Phase
+
+Offline bot matches now start directly in a 30-second buy phase at the start zone with `$3200` shown in the HUD. The Ranger Pistol is standard issue; BRAMBLE-47 costs `$1800` and YARDLINE-5 costs `$2400`. Purchases deduct cash, equip the selected weapon, and update the armory immediately. `B` opens the usable weapon-buy overlay after pointer lock is released. Buy and weapon-selection overlays do not stop the round timer; Settings and Pause do. After live play and round end, the next round returns to the buy phase and respawns the player at the start zone. The Iron Yard labels are also reduced to direct game actions and status.
+
+## Previous: Iron Yard Bot Visibility And Fullscreen
 
 Iron Yard now has an in-frame **IRON YARD FULLSCREEN** action (`F`) that fullscreen-targets only the arena shell and keeps the canvas and combat HUD usable. The original first-person weapon meshes retain the existing local wood and metal albedo maps with clearer UV placement; the Ranger Pistol now has visibly separate textured wood-grip and metal-receiver geometry. Gameplay bots keep an unlit stylized body, helmet, and weapon silhouette while locally hosted Kenney GLBs load. Valid GLBs are centered, floor-fitted, double-sided, and use their base-color maps without depending on scene lighting, so model, texture, camera, or material differences cannot make a bot disappear.
 
@@ -16,7 +20,7 @@ Iron Yard now keeps its armory, owned loadout, settings, and pause/return contro
 
 ## v3.7.2 Iron Yard Tactical Shell
 
-Iron Yard now opens on a dedicated tactical game shell rather than an auto-start website section. Offline practice has configurable rookie/standard/veteran opposition and one to three bots, warmup, buy, live, and round-end states, cash awards and death penalties, a start-zone buy rule, a recoil drill, hit/damage feedback, and a compact combat HUD. Core movement/reload/jump bindings can be reassigned with conflict indication and are saved locally. Private 1v1 keeps the compatible server-validated protocol and now interpolates rival visuals between snapshots.
+Iron Yard moved to a dedicated tactical game shell rather than an auto-start website section. That release introduced configurable rookie/standard/veteran opposition, one to three bots, early warmup/buy/live round states, cash awards and death penalties, a start-zone buy rule, a recoil drill, hit/damage feedback, and a compact combat HUD. Core movement/reload/jump bindings can be reassigned with conflict indication and are saved locally. Private 1v1 keeps the compatible server-validated protocol and now interpolates rival visuals between snapshots.
 
 ## Previous: Iron Yard Arsenal
 
@@ -265,7 +269,7 @@ Use the project's publishable/anon key only. Never expose a service-role key in 
 - **Trail Trace:** trace the generated winding target line with a mouse, touch, or pen. The final score combines farthest target progress with average line accuracy, with a small completion bonus.
 - **Bottle Shot:** a 30-second target range with six smaller, touch-accessible bottles visible at once. Click or tap each active bottle once to break it: green and blue bottles add +10, while the more-common red bottles subtract 10. A shot or tap on the range that misses an active bottle also subtracts 10. A new seeded six-bottle wave appears every 1.5 seconds; Ash's target hits, red-bottle mistakes, and range misses vary by difficulty.
 - **Rock Paper Scissors:** a simultaneous best-of-five, first-to-three match. Rock beats Scissors, Scissors beats Paper, and Paper beats Rock; matching choices tie and replay without awarding a round.
-- **Iron Yard:** normal desktop Three.js/WebGL FPS. Start Training Bot without any service, or create/join a private 1v1 room with `VITE_ARENA_SERVER_URL`. Click to capture the mouse; `WASD` moves, `Shift` sprints, `Ctrl` crouches, `Space` jumps, click fires, right-click toggles ADS, and `R` reloads. `Escape` pauses/releases the mouse. Reticle and sensitivity persist locally.
+- **Iron Yard:** normal desktop Three.js/WebGL FPS. Start a Bot Match without any service, or create/join a private 1v1 room with `VITE_ARENA_SERVER_URL`. Offline matches begin with a 30-second buy phase in the start zone; press `B` to buy/equip weapons before the live round. Click to capture the mouse; `WASD` moves, `Shift` sprints, `Ctrl` crouches, `Space` jumps, click fires, right-click toggles ADS, and `R` reloads. `Escape` pauses/releases the mouse. Reticle and sensitivity persist locally.
 - **Showdown Series:** best of five, first to three wins. A lightweight cinematic title card opens the series, then every round reveals its randomly selected Quick Draw, Word Duel, Trail Trace, Bottle Shot, or Rock Paper Scissors test with a three-second countdown. The persistent series strip shows score, round, revealed test, and the next controller; win/loss announcements lead into a final champion screen with rematch and return controls. Ghost Challenge is excluded. In multiplayer, the prior-round winner controls the next round; a tie returns control to the host for a replay.
 - In every AI mode, acting before the signal is a false start and loses the round.
 

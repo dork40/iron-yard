@@ -209,3 +209,6 @@ body { color:var(--paper); background:radial-gradient(ellipse 72% 35% at 50% -8%
 .arena-game:fullscreen .arena-frame { width:min(100%,calc((100vh - 24px) * 16 / 9)); height:auto; max-height:calc(100vh - 24px); aspect-ratio:16 / 9; }
 .arena-game:fullscreen .arena-action-bar { grid-template-columns:repeat(5,minmax(0,1fr)); }
 @media (max-width:700px) { .arena-game:fullscreen { padding:8px; }.arena-game:fullscreen .arena-frame { width:100%; max-height:calc(100vh - 16px); }.arena-game:fullscreen .arena-action-bar { grid-template-columns:1fr 1fr; } }
+
+/* Keep the active buy window immediately recognizable in the compact combat HUD. */
+.arena-round-hud b[data-phase="buy"] { color:var(--gold-pale); font-size:14px; }.arena-buy-readout #arena-buy-phase { color:var(--gold-pale); font-weight:700; }

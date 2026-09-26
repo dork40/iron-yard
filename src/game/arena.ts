@@ -38,12 +38,12 @@ export function mountArena(_onComplete: (result: ArenaResult) => void) {
     pause: document.querySelector<HTMLElement>("#arena-pause-panel")!,
   };
 
-  const updateActionPanels = () => {
+  const updateActionPanels = (now = performance.now()) => {
     const canBuy = !online && tactical.canBuy(inBuyZone());
     buyCash.textContent = `CASH $${tactical.cash}`;
-    buyPhase.textContent = online ? "ONLINE LOADOUT LOCKED" : `${tactical.phase.toUpperCase()} PHASE`;
+    buyPhase.textContent = online ? "ONLINE LOADOUT LOCKED" : tactical.phase === "buy" ? tactical.label(now) : "BUY CLOSED";
     buyZone.textContent = inBuyZone() ? "IN START ZONE" : "START ZONE REQUIRED";
-    buyRequirement.textContent = online ? "Private 1V1 loadouts are fixed for this compatible session." : canBuy ? "BUY OPEN: SELECT AN UNACQUIRED WEAPON." : tactical.phase !== "buy" ? "BUY LOCKED: WAIT FOR THE BUY PHASE." : "BUY LOCKED: RETURN TO THE START ZONE.";
+    buyRequirement.textContent = online ? "Weapons are fixed for this match." : canBuy ? "Select a weapon to buy and equip it." : tactical.phase !== "buy" ? "Buying is available during the next buy phase." : "Return to the start zone to buy.";
     document.querySelectorAll<HTMLButtonElement>("[data-weapon]").forEach(button => {
       const id = button.dataset.weapon as WeaponId, spec = weapons[id], isOwned = owned.has(id), equipped = weapon.spec.id === id, purchasing = button.hasAttribute("data-arena-loadout");
       const state = equipped ? "EQUIPPED" : isOwned ? "OWNED · EQUIP" : purchasing ? spec.price > tactical.cash ? `NEED $${spec.price - tactical.cash}` : canBuy ? "BUY" : "LOCKED" : "NOT OWNED";
@@ -55,21 +55,29 @@ export function mountArena(_onComplete: (result: ArenaResult) => void) {
   };
   const updateHud = (now = performance.now()) => {
     updateArenaHud({ health, ammo, rival, phase, cash, score }, { health: player.health, ammo: weapon.reloading ? "RELOADING" : `${weapon.ammo} / ${weapon.reserve}`, rival: online ? "RIVAL LIVE" : `${bots.length} BOT${bots.length === 1 ? "" : "S"}`, phase: online ? "live" : tactical.phase, phaseLabel: online ? "ONLINE 1V1" : tactical.label(now), cash: tactical.cash, eliminations: tactical.eliminations, deaths: tactical.deaths });
-    updateActionPanels();
+    updateActionPanels(now);
+  };
+  const panelPausesRound = (panel: ArenaPanel) => !online && (panel === "settings" || panel === "pause");
+  const resumeRoundTimer = () => {
+    if (!pausedAt) return;
+    tactical.endsAt += performance.now() - pausedAt;
+    pausedAt = 0;
   };
   const closePanel = () => {
     if (!openPanel) return;
+    if (panelPausesRound(openPanel)) resumeRoundTimer();
     panels[openPanel].hidden = true;
     openPanel = undefined;
-    if (pausedAt && !online) tactical.endsAt += performance.now() - pausedAt;
-    pausedAt = 0;
     pause.hidden = document.pointerLockElement === renderer.domElement || !active;
     updateHud();
   };
   const showPanel = (panel: ArenaPanel) => {
     if (openPanel === panel) { closePanel(); return; }
-    if (openPanel) panels[openPanel].hidden = true;
-    if (!openPanel && active) pausedAt = performance.now();
+    if (openPanel) {
+      if (panelPausesRound(openPanel) && !panelPausesRound(panel)) resumeRoundTimer();
+      panels[openPanel].hidden = true;
+    }
+    if (active && !pausedAt && panelPausesRound(panel)) pausedAt = performance.now();
     openPanel = panel;
     document.exitPointerLock?.();
     panels[panel].hidden = false;
@@ -77,11 +85,12 @@ export function mountArena(_onComplete: (result: ArenaResult) => void) {
     updateHud();
   };
   const spawnBots = () => { bots.forEach(bot => scene.remove(bot.group)); bots = Array.from({ length: config.botCount }, (_, i) => { const group = createFighter(i ? "#405e6a" : "#6a4e47", i % 2 ? "character-f" : "character-a"); group.position.set(10 - i * 5, 0, -9 + i * 6); scene.add(group); const bot: Bot = { group, health: 100, velocity: new THREE.Vector3(), spawn: group.position.clone(), seed: 0x1a2b3c4d + i, lastSeen: group.position.clone(), nextDecision: 0, reactionUntil: 0, nextShot: 0, reloadUntil: 0, burstShots: 0, strafe: i % 2 ? -1 : 1 }; resetBot(bot, performance.now()); return bot; }); };
-  const deploy = (isOnline = false, drill = false) => { online = isOnline; if (online) { bots.forEach(bot => scene.remove(bot.group)); bots = []; } else { spawnBots(); tactical.start(performance.now()); if (drill) tactical.phase = "live"; } active = true; lock.hidden = false; document.querySelectorAll<HTMLButtonElement>("#arena-fire,#arena-reload,#arena-ads").forEach(button => button.disabled = false); message.textContent = online ? "RIVAL CONNECTED. CLICK TO DEPLOY." : drill ? "RECOIL DRILL LIVE. CONTROL THE PATTERN." : "WARMUP. BUY OPENS ON THE BELL."; updateHud(); };
+  const spawnInBuyZone = () => { camera.position.set(-10, 1.7, 9); player.velocity.set(0, 0, 0); player.health = 100; };
+  const deploy = (isOnline = false) => { online = isOnline; pausedAt = 0; if (online) { bots.forEach(bot => scene.remove(bot.group)); bots = []; } else { spawnBots(); tactical.start(performance.now()); spawnInBuyZone(); } active = true; lock.hidden = false; document.querySelectorAll<HTMLButtonElement>("#arena-fire,#arena-reload,#arena-ads").forEach(button => button.disabled = false); message.textContent = online ? "RIVAL CONNECTED. CLICK TO DEPLOY." : "BUY PHASE STARTED. PRESS B TO BUY WEAPONS."; updateHud(); };
   const tracer = (from: THREE.Vector3, to: THREE.Vector3) => { const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints([from, to]), new THREE.LineBasicMaterial({ color: "#ffd28a" })); scene.add(line); window.setTimeout(() => { scene.remove(line); line.geometry.dispose(); (line.material as THREE.Material).dispose(); }, 70); };
   const wallDistance = (from: THREE.Vector3, direction: THREE.Vector3) => { let nearest = Infinity; for (const box of colliders) { const point = new THREE.Vector3(); if (raycaster.ray.set(from, direction).intersectBox(box, point)) nearest = Math.min(nearest, point.distanceTo(from)); } return nearest; };
   const hitFeedback = (text: string) => { feedback.textContent = text; window.setTimeout(() => { feedback.textContent = ""; }, 380); };
-  const fire = () => { const now = performance.now(); if (!active || openPanel || document.pointerLockElement !== renderer.domElement || !weapon.canFire(now) || (!online && tactical.phase === "round-end")) return; weapon.fired(now); triggerWeaponFire(gun, now); shots++; recoil.kick(weapon.spec.recoil, weapon.spec.recoil * .55); muzzle.intensity = 5; window.setTimeout(() => muzzle.intensity = 0, 35); const origin = camera.position.clone(), direction = new THREE.Vector3(); camera.getWorldDirection(direction); direction.x += (Math.random() - .5) * weapon.spec.spread; direction.y += (Math.random() - .5) * weapon.spec.spread; direction.normalize(); raycaster.set(origin, direction); const wall = wallDistance(origin, direction), impacts = bots.flatMap(bot => { const hit = raycaster.intersectObject(bot.group, true)[0]; return hit && hit.distance < wall ? [{ bot, hit }] : []; }).sort((a, b) => a.hit.distance - b.hit.distance); const impact = impacts[0]?.hit.point ?? origin.clone().addScaledVector(direction, Math.min(wall, 35)); tracer(origin, impact); if (online) network.send({ type: "shot", loadout: weapon.spec.id === "pistol" ? "sidearm" : "carbine", yaw: player.yaw, pitch: player.pitch }); else if (impacts[0]) { const { bot, hit } = impacts[0], headshot = hit.point.y - bot.group.position.y > 1.35; bot.health -= headshot ? weapon.spec.headshot : weapon.spec.damage; hits++; hitFeedback(headshot ? "HEADSHOT" : "HIT"); playSound("impact"); if (bot.health <= 0) { kills++; tactical.elimination(); bot.health = 100; bot.group.position.copy(bot.spawn); resetBot(bot, now); message.textContent = "ELIMINATION. +$300. TARGET REDEPLOYED."; } } playSound(({ frontier: "frontier-shot", modern: "modern-shot", pistol: "pistol-shot" } as const)[weapon.spec.sound]); updateHud(now); };
+  const fire = () => { const now = performance.now(); if (!active || openPanel || document.pointerLockElement !== renderer.domElement || !weapon.canFire(now) || (!online && tactical.phase !== "live")) return; weapon.fired(now); triggerWeaponFire(gun, now); shots++; recoil.kick(weapon.spec.recoil, weapon.spec.recoil * .55); muzzle.intensity = 5; window.setTimeout(() => muzzle.intensity = 0, 35); const origin = camera.position.clone(), direction = new THREE.Vector3(); camera.getWorldDirection(direction); direction.x += (Math.random() - .5) * weapon.spec.spread; direction.y += (Math.random() - .5) * weapon.spec.spread; direction.normalize(); raycaster.set(origin, direction); const wall = wallDistance(origin, direction), impacts = bots.flatMap(bot => { const hit = raycaster.intersectObject(bot.group, true)[0]; return hit && hit.distance < wall ? [{ bot, hit }] : []; }).sort((a, b) => a.hit.distance - b.hit.distance); const impact = impacts[0]?.hit.point ?? origin.clone().addScaledVector(direction, Math.min(wall, 35)); tracer(origin, impact); if (online) network.send({ type: "shot", loadout: weapon.spec.id === "pistol" ? "sidearm" : "carbine", yaw: player.yaw, pitch: player.pitch }); else if (impacts[0]) { const { bot, hit } = impacts[0], headshot = hit.point.y - bot.group.position.y > 1.35; bot.health -= headshot ? weapon.spec.headshot : weapon.spec.damage; hits++; hitFeedback(headshot ? "HEADSHOT" : "HIT"); playSound("impact"); if (bot.health <= 0) { kills++; tactical.elimination(); bot.health = 100; bot.group.position.copy(bot.spawn); resetBot(bot, now); message.textContent = "ELIMINATION. +$300. TARGET REDEPLOYED."; } } playSound(({ frontier: "frontier-shot", modern: "modern-shot", pistol: "pistol-shot" } as const)[weapon.spec.sound]); updateHud(now); };
   const input = new DesktopInput(renderer.domElement, (x, y) => player.look(x, y, settings.sensitivity), fire, () => aiming = !aiming, settings.bindings);
   const request = () => { if (active && !openPanel) renderer.domElement.requestPointerLock().catch(() => message.textContent = "POINTER LOCK WAS BLOCKED. CLICK AGAIN."); };
   const resize = () => { const bounds = host.getBoundingClientRect(); renderer.setSize(bounds.width, bounds.height, false); camera.aspect = bounds.width / bounds.height; camera.updateProjectionMatrix(); };
@@ -111,7 +120,6 @@ export function mountArena(_onComplete: (result: ArenaResult) => void) {
   document.querySelector<HTMLInputElement>("#cross-import")?.addEventListener("change", event => { const value = importCrosshair((event.target as HTMLInputElement).value); if (value) { settings.crosshair = value; paintCrosshair(reticle, value); saveSettings(settings); syncSettingsControls(); } });
   syncSettingsControls(); updateHud();
   document.querySelector("#arena-bot")?.addEventListener("click", () => { config = { difficulty: document.querySelector<HTMLSelectElement>("#arena-difficulty")?.value as ArenaConfig["difficulty"] ?? "standard", botCount: Number(document.querySelector<HTMLSelectElement>("#arena-bot-count")?.value ?? 1) as ArenaConfig["botCount"] }; deploy(); });
-  document.querySelector("#arena-drill")?.addEventListener("click", () => deploy(false, true));
   document.querySelector("#arena-create")?.addEventListener("click", () => { if (network.connect("create", "", handleNetwork)) message.textContent = "CREATING ROOM..."; });
   document.querySelector("#arena-join")?.addEventListener("click", () => { const code = document.querySelector<HTMLInputElement>("#arena-room-code")?.value.trim().toUpperCase() ?? ""; if (code.length === 6 && network.connect("join", code, handleNetwork)) message.textContent = "JOINING ROOM..."; });
   document.querySelectorAll<HTMLButtonElement>("[data-arena-panel]").forEach(button => button.addEventListener("click", () => showPanel(button.dataset.arenaPanel as ArenaPanel)));
@@ -119,7 +127,7 @@ export function mountArena(_onComplete: (result: ArenaResult) => void) {
   document.querySelectorAll<HTMLButtonElement>("[data-arena-loadout]").forEach(button => button.addEventListener("click", () => buy(button.dataset.arenaLoadout as WeaponId)));
   document.querySelectorAll<HTMLButtonElement>("[data-arena-equip]").forEach(button => button.addEventListener("click", () => { const id = button.dataset.arenaEquip as WeaponId; if (owned.has(id)) equip(id); }));
   document.querySelector("#arena-return-panel")?.addEventListener("click", () => document.querySelector<HTMLButtonElement>("#arena-return")?.click());
-  const updateFullscreen = () => { const isFullscreen = document.fullscreenElement === arenaGame; fullscreen.textContent = isFullscreen ? "EXIT IRON YARD FULLSCREEN (F)" : "IRON YARD FULLSCREEN (F)"; fullscreen.setAttribute("aria-pressed", String(isFullscreen)); if (!isFullscreen && suppressPauseForFullscreenExit) { pause.hidden = true; window.setTimeout(() => suppressPauseForFullscreenExit = false, 0); } };
+  const updateFullscreen = () => { const isFullscreen = document.fullscreenElement === arenaGame; fullscreen.textContent = isFullscreen ? "EXIT FULL SCREEN (F)" : "FULL SCREEN (F)"; fullscreen.setAttribute("aria-pressed", String(isFullscreen)); if (!isFullscreen && suppressPauseForFullscreenExit) { pause.hidden = true; window.setTimeout(() => suppressPauseForFullscreenExit = false, 0); } };
   const toggleFullscreen = () => {
     if (document.fullscreenElement === arenaGame) void document.exitFullscreen().catch(() => undefined);
     else if (!document.fullscreenElement && document.fullscreenEnabled) void arenaGame.requestFullscreen().catch(() => message.textContent = "FULLSCREEN WAS BLOCKED BY THE BROWSER.");
@@ -128,7 +136,7 @@ export function mountArena(_onComplete: (result: ArenaResult) => void) {
   lock.addEventListener("click", request); renderer.domElement.addEventListener("click", request); renderer.domElement.addEventListener("contextmenu", event => event.preventDefault());
   const onKeyDown = (event: KeyboardEvent) => {
     if (binding) { const conflict = Object.entries(settings.bindings).find(([action, key]) => action !== binding && key === event.code); if (conflict) document.querySelector("#binding-notice")!.textContent = `${event.code.replace("Key", "")} IS ALREADY ${conflict[0].toUpperCase()}.`; else { settings.bindings[binding] = event.code; saveSettings(settings); syncSettingsControls(); document.querySelector("#binding-notice")!.textContent = "BINDING SAVED."; } binding = undefined; event.preventDefault(); return; }
-    if (event.code === "Escape") { if (document.fullscreenElement === arenaGame) { suppressPauseForFullscreenExit = true; void document.exitFullscreen().catch(() => suppressPauseForFullscreenExit = false); event.preventDefault(); return; } if (document.pointerLockElement === renderer.domElement) document.exitPointerLock?.(); else closePanel(); event.preventDefault(); return; }
+    if (event.code === "Escape") { if (document.fullscreenElement === arenaGame) { suppressPauseForFullscreenExit = true; void document.exitFullscreen().catch(() => suppressPauseForFullscreenExit = false); event.preventDefault(); return; } if (document.pointerLockElement === renderer.domElement) showPanel("pause"); else closePanel(); event.preventDefault(); return; }
     if (event.code === "KeyB" && !event.repeat) { showPanel("buy"); event.preventDefault(); return; }
     if (event.code === "KeyF" && !event.repeat) { toggleFullscreen(); event.preventDefault(); return; }
     if (event.code === settings.bindings.reload && document.pointerLockElement === renderer.domElement) reload();
@@ -138,8 +146,14 @@ export function mountArena(_onComplete: (result: ArenaResult) => void) {
   let raf = 0;
   const frame = (now: number) => {
     const dt = Math.min(.05, (now - lastFrame) / 1000); lastFrame = now;
+    if (active && !online && !pausedAt) {
+      const phaseChange = tactical.tick(now);
+      if (phaseChange === "live") message.textContent = "LIVE ROUND STARTED.";
+      if (phaseChange === "round-end") message.textContent = "ROUND COMPLETE. BUY STARTS SOON.";
+      if (phaseChange === "buy") { spawnInBuyZone(); message.textContent = "BUY PHASE STARTED. PRESS B TO BUY WEAPONS."; }
+    }
+    if (active && openPanel && !pausedAt) updateHud(now);
     if (active && !openPanel) {
-      if (!online) tactical.tick(now);
       if (document.pointerLockElement === renderer.domElement) player.update(dt, input);
       if (input.firing && weapon.spec.automatic) fire();
       recoil.update(dt); gun.rotation.x = -recoil.pitch; gun.rotation.y = recoil.yaw;
