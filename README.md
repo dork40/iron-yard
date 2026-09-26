@@ -1,6 +1,10 @@
 # High Noon Showdown
 
-High Noon Showdown v3.4.1 is an original Wild West browser game with local player progression, synthesized Web Audio effects, an AI-only Ghost Challenge personal-best race, casual multiplayer, and a live 3D 1v1 arena. It contains no borrowed characters, art, sounds, maps, dialogue, or branding.
+High Noon Showdown v3.4.2 is an original Wild West browser game with local player progression, synthesized Web Audio effects, an AI-only Ghost Challenge personal-best race, casual multiplayer, and a live 3D 1v1 arena. It contains no borrowed characters, art, sounds, maps, dialogue, or branding.
+
+## v3.4.2 Arena Entry Fix
+
+The Enter Arena control now stays hidden until both players are connected, reports when a rival is still required, and shows a clear message if the browser blocks mouse lock.
 
 ## v3.4.1 Build Fix
 
