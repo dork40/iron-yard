@@ -71,7 +71,7 @@ const buildFoundry: Builder = (group, colliders) => {
   const { box, floor, walls, beacon, brick, rust, steel, amber, black } = createBuilder(group, colliders);
   floor(44, 44, black); walls(44, 44, brick, 6);
   // Furnace blocks split the interior into quick, readable fights instead of a single open room.
-  box(0, 2.2, -15, 15, 4.4, 4, rust); box(0, 4.7, -12.7, 9, .8, amber, false); beacon(0, -12, "#ff713c", 5.3);
+  box(0, 2.2, -15, 15, 4.4, 4, rust); box(0, 4.7, -12.7, 9, .8, .8, amber, false); beacon(0, -12, "#ff713c", 5.3);
   [[-12, -4], [12, -4], [-12, 8], [12, 8]].forEach(([x, z]) => { box(x, 2.5, z, 2.1, 5, 2.1, steel); beacon(x, z, "#e8a35c", 4.8); });
   box(-6, 1.2, 5, 7, 2.4, 2.8, rust); box(7, 1.2, 5, 7, 2.4, 2.8, rust); box(-16, 1.2, 13, 4, 2.4, 4, amber); box(16, 1.2, 13, 4, 2.4, 4, amber);
   box(-18, 3.2, -13, .7, 6.4, .7, steel); box(18, 3.2, -13, .7, 6.4, .7, steel); box(0, 6, -13, 36, .65, .65, steel);
