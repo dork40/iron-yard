@@ -1,8 +1,12 @@
 # High Noon Showdown
 
-High Noon Showdown v4.1.1 is an original Wild West browser game with local player progression, synthesized Web Audio effects, an AI-only Ghost Challenge personal-best race, casual multiplayer, and Iron Yard: a normal desktop browser FPS vertical slice. Iron Yard uses locally bundled CC0 Kenney character assets; its maps, weapons, sounds, dialogue, and branding remain original.
+High Noon Showdown v4.2.0 is an original Wild West browser game with local player progression, synthesized Web Audio effects, an AI-only Ghost Challenge personal-best race, casual multiplayer, and Iron Yard: a normal desktop browser FPS vertical slice. Iron Yard uses locally bundled CC0 Kenney character assets; its maps, weapons, sounds, dialogue, and branding remain original.
 
-## v4.1.1 Iron Yard Map Expansion
+## v4.2.0 Iron Yard Input And Fullscreen Fixes
+
+Iron Yard fullscreen now targets only the self-contained 16:9 arena frame, so the page outside the canvas, combat HUD, action bar, and in-frame panels never becomes the fullscreen surface. Reloads only start when the active pointer-locked player has missing magazine ammo and reserve ammo; clear HUD messages cover reloading, full magazines, and empty reserve. Equipping a weapon cancels its pending reload, preventing an old completion from changing the new weapon. Mouse fire is released on browser blur or pointer-lock loss; pistols remain one shot per primary press and automatic weapons fire only while the primary button remains held under pointer lock.
+
+## Previous: Iron Yard Map Expansion
 
 Offline Bot Match now offers three original maps. **Iron Yard** is an improved balanced industrial yard with a crane divider and striped cargo bays. **Freight Terminal** has long container lanes, crossing cover, and blue/amber terminal landmarks. **Foundry** is a close-to-mid-range interior built around a glowing furnace, heavy columns, and molten-orange bays. Each map supplies its own geometry, colliders, cover points, bot spawns, player buy spawn, lighting, fog, and background; the selected map locks when a bot match starts and later menu changes do not alter that active match. All environments use the existing locally bundled CC0 materials or generated procedural materials.
 

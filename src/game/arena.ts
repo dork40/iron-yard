@@ -21,8 +21,8 @@ export function arenaView() { return arenaMenuView(Boolean(arenaSocketUrl()), de
 
 export function mountArena(_onComplete: (result: ArenaResult) => void) {
   stop?.();
-  const arenaGame = document.querySelector<HTMLElement>(".arena-game"), host = document.querySelector<HTMLElement>("#arena-canvas"), message = document.querySelector<HTMLElement>("#arena-message"), lock = document.querySelector<HTMLButtonElement>("#arena-lock"), health = document.querySelector<HTMLElement>("#arena-health"), ammo = document.querySelector<HTMLElement>("#arena-ammo"), rival = document.querySelector<HTMLElement>("#arena-rival"), phase = document.querySelector<HTMLElement>("#arena-phase"), cash = document.querySelector<HTMLElement>("#arena-cash"), score = document.querySelector<HTMLElement>("#arena-score"), reticle = document.querySelector<HTMLElement>("#arena-crosshair"), pause = document.querySelector<HTMLElement>("#arena-pause"), feedback = document.querySelector<HTMLElement>("#arena-feedback"), buyCash = document.querySelector<HTMLElement>("#arena-buy-cash"), buyPhase = document.querySelector<HTMLElement>("#arena-buy-phase"), buyZone = document.querySelector<HTMLElement>("#arena-buy-zone"), buyRequirement = document.querySelector<HTMLElement>("#arena-buy-requirement"), fullscreen = document.querySelector<HTMLButtonElement>("#arena-fullscreen");
-  if (!arenaGame || !host || !message || !lock || !health || !ammo || !rival || !phase || !cash || !score || !reticle || !pause || !feedback || !buyCash || !buyPhase || !buyZone || !buyRequirement || !fullscreen) return;
+  const arenaFrame = document.querySelector<HTMLElement>(".arena-frame"), host = document.querySelector<HTMLElement>("#arena-canvas"), message = document.querySelector<HTMLElement>("#arena-message"), lock = document.querySelector<HTMLButtonElement>("#arena-lock"), health = document.querySelector<HTMLElement>("#arena-health"), ammo = document.querySelector<HTMLElement>("#arena-ammo"), rival = document.querySelector<HTMLElement>("#arena-rival"), phase = document.querySelector<HTMLElement>("#arena-phase"), cash = document.querySelector<HTMLElement>("#arena-cash"), score = document.querySelector<HTMLElement>("#arena-score"), reticle = document.querySelector<HTMLElement>("#arena-crosshair"), pause = document.querySelector<HTMLElement>("#arena-pause"), feedback = document.querySelector<HTMLElement>("#arena-feedback"), buyCash = document.querySelector<HTMLElement>("#arena-buy-cash"), buyPhase = document.querySelector<HTMLElement>("#arena-buy-phase"), buyZone = document.querySelector<HTMLElement>("#arena-buy-zone"), buyRequirement = document.querySelector<HTMLElement>("#arena-buy-requirement"), fullscreen = document.querySelector<HTMLButtonElement>("#arena-fullscreen");
+  if (!arenaFrame || !host || !message || !lock || !health || !ammo || !rival || !phase || !cash || !score || !reticle || !pause || !feedback || !buyCash || !buyPhase || !buyZone || !buyRequirement || !fullscreen) return;
 
   const settings = loadSettings(), scene = new THREE.Scene(), camera = new THREE.PerspectiveCamera(settings.fov, 16 / 9, .05, 90), renderer = createRenderer(host, settings.graphics), colliders: THREE.Box3[] = [], initialMap = buildArenaMap(scene, "iron-yard"), player = new FpsPlayer(camera, colliders), weapon = new WeaponState(), recoil = new Recoil(), network = new ArenaNetwork(), tactical = new TacticalRound();
   colliders.push(...initialMap.colliders); camera.position.copy(initialMap.playerSpawn); scene.add(camera);
@@ -110,7 +110,15 @@ export function mountArena(_onComplete: (result: ArenaResult) => void) {
   const request = () => { if (active && !openPanel) renderer.domElement.requestPointerLock().catch(() => message.textContent = "POINTER LOCK WAS BLOCKED. CLICK AGAIN."); };
   const resize = () => { const bounds = host.getBoundingClientRect(); renderer.setSize(bounds.width, bounds.height, false); camera.aspect = bounds.width / bounds.height; camera.updateProjectionMatrix(); };
   const observer = new ResizeObserver(resize); observer.observe(host); resize(); paintCrosshair(reticle, settings.crosshair);
-  const reload = () => { if (!openPanel) weapon.reload(() => { playSound("reload"); updateHud(); }); };
+  const reload = () => {
+    if (!active || openPanel || document.pointerLockElement !== renderer.domElement) return;
+    const result = weapon.reload(() => { playSound("reload"); message.textContent = "RELOAD COMPLETE."; updateHud(); });
+    if (result === "started") message.textContent = "RELOADING...";
+    if (result === "reloading") message.textContent = "RELOAD IN PROGRESS.";
+    if (result === "full") message.textContent = "MAGAZINE FULL.";
+    if (result === "empty") message.textContent = "NO RESERVE AMMO.";
+    updateHud();
+  };
   const equip = (id: WeaponId) => { weapon.select(id); camera.remove(gun); gun = createWeapon(camera, id); message.textContent = `${weapons[id].name} EQUIPPED.`; updateHud(); };
   const buy = (id: WeaponId) => { if (!owned.has(id)) { const notice = tactical.buy(id, weapons[id].price, owned, inBuyZone()); if (notice) { message.textContent = notice; updateHud(); return; } message.textContent = `${weapons[id].name} PURCHASED.`; } equip(id); };
   const applySpawn = (value: { x: number; z: number; yaw: number; pitch: number; health: number }) => { camera.position.set(value.x * 8, 1.7, 1 - value.z * 12); player.yaw = value.yaw; player.pitch = value.pitch; player.velocity.set(0, 0, 0); player.health = value.health; };
@@ -142,19 +150,19 @@ export function mountArena(_onComplete: (result: ArenaResult) => void) {
   document.querySelectorAll<HTMLButtonElement>("[data-arena-loadout]").forEach(button => button.addEventListener("click", () => buy(button.dataset.arenaLoadout as WeaponId)));
   document.querySelectorAll<HTMLButtonElement>("[data-arena-equip]").forEach(button => button.addEventListener("click", () => { const id = button.dataset.arenaEquip as WeaponId; if (owned.has(id)) equip(id); }));
   document.querySelector("#arena-return-panel")?.addEventListener("click", () => document.querySelector<HTMLButtonElement>("#arena-return")?.click());
-  const updateFullscreen = () => { const isFullscreen = document.fullscreenElement === arenaGame; fullscreen.textContent = isFullscreen ? "EXIT FULL SCREEN (F)" : "FULL SCREEN (F)"; fullscreen.setAttribute("aria-pressed", String(isFullscreen)); if (!isFullscreen && suppressPauseForFullscreenExit) { pause.hidden = true; window.setTimeout(() => suppressPauseForFullscreenExit = false, 0); } };
+  const updateFullscreen = () => { const isFullscreen = document.fullscreenElement === arenaFrame; fullscreen.textContent = isFullscreen ? "EXIT FULL SCREEN (F)" : "FULL SCREEN (F)"; fullscreen.setAttribute("aria-pressed", String(isFullscreen)); if (!isFullscreen && suppressPauseForFullscreenExit) { pause.hidden = true; window.setTimeout(() => suppressPauseForFullscreenExit = false, 0); } };
   const toggleFullscreen = () => {
-    if (document.fullscreenElement === arenaGame) void document.exitFullscreen().catch(() => undefined);
-    else if (!document.fullscreenElement && document.fullscreenEnabled) void arenaGame.requestFullscreen().catch(() => message.textContent = "FULLSCREEN WAS BLOCKED BY THE BROWSER.");
+    if (document.fullscreenElement === arenaFrame) void document.exitFullscreen().catch(() => undefined);
+    else if (!document.fullscreenElement && document.fullscreenEnabled) void arenaFrame.requestFullscreen().catch(() => message.textContent = "FULLSCREEN WAS BLOCKED BY THE BROWSER.");
   };
   fullscreen.addEventListener("click", toggleFullscreen); document.addEventListener("fullscreenchange", updateFullscreen); updateFullscreen();
   lock.addEventListener("click", request); renderer.domElement.addEventListener("click", request); renderer.domElement.addEventListener("contextmenu", event => event.preventDefault());
   const onKeyDown = (event: KeyboardEvent) => {
     if (binding) { const conflict = Object.entries(settings.bindings).find(([action, key]) => action !== binding && key === event.code); if (conflict) document.querySelector("#binding-notice")!.textContent = `${event.code.replace("Key", "")} IS ALREADY ${conflict[0].toUpperCase()}.`; else { settings.bindings[binding] = event.code; saveSettings(settings); syncSettingsControls(); document.querySelector("#binding-notice")!.textContent = "BINDING SAVED."; } binding = undefined; event.preventDefault(); return; }
-    if (event.code === "Escape") { if (document.fullscreenElement === arenaGame) { suppressPauseForFullscreenExit = true; void document.exitFullscreen().catch(() => suppressPauseForFullscreenExit = false); event.preventDefault(); return; } if (document.pointerLockElement === renderer.domElement) showPanel("pause"); else closePanel(); event.preventDefault(); return; }
+    if (event.code === "Escape") { if (document.fullscreenElement === arenaFrame) { suppressPauseForFullscreenExit = true; void document.exitFullscreen().catch(() => suppressPauseForFullscreenExit = false); event.preventDefault(); return; } if (document.pointerLockElement === renderer.domElement) showPanel("pause"); else closePanel(); event.preventDefault(); return; }
     if (event.code === "KeyB" && !event.repeat) { showPanel("buy"); event.preventDefault(); return; }
     if (event.code === "KeyF" && !event.repeat) { toggleFullscreen(); event.preventDefault(); return; }
-    if (event.code === settings.bindings.reload && document.pointerLockElement === renderer.domElement) reload();
+    if (!event.repeat && event.code === settings.bindings.reload && active && document.pointerLockElement === renderer.domElement) reload();
   };
   document.querySelectorAll<HTMLButtonElement>("[data-bind]").forEach(button => button.addEventListener("click", () => { binding = button.dataset.bind as BindingAction; document.querySelector("#binding-notice")!.textContent = `PRESS A KEY FOR ${binding.toUpperCase()}.`; }));
   document.addEventListener("keydown", onKeyDown); document.addEventListener("pointerlockchange", onLockChange);
@@ -192,7 +200,7 @@ export function mountArena(_onComplete: (result: ArenaResult) => void) {
     renderer.render(scene, camera); raf = requestAnimationFrame(frame);
   };
   raf = requestAnimationFrame(frame);
-  stop = () => { cancelAnimationFrame(raf); network.close(); input.destroy(); observer.disconnect(); document.exitPointerLock?.(); document.removeEventListener("keydown", onKeyDown); document.removeEventListener("pointerlockchange", onLockChange); document.removeEventListener("fullscreenchange", updateFullscreen); disposeMap(activeMap); renderer.dispose(); host.replaceChildren(); stop = undefined; };
+  stop = () => { cancelAnimationFrame(raf); weapon.cancelReload(); network.close(); input.destroy(); observer.disconnect(); document.exitPointerLock?.(); document.removeEventListener("keydown", onKeyDown); document.removeEventListener("pointerlockchange", onLockChange); document.removeEventListener("fullscreenchange", updateFullscreen); disposeMap(activeMap); renderer.dispose(); host.replaceChildren(); stop = undefined; };
   return stop;
 }
 
