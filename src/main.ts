@@ -8,7 +8,7 @@ import { authority } from "./services/authority";
 import type { AiDifficulty, DuelResult, DirectGameMode, GameMode, LocalModeStats, MultiplayerGameMode, MultiplayerRound, PlayerProfile, Room, Round, RpsChoice } from "./types";
 
 type Page = "home" | "mode-select" | "game" | "multiplayer" | "how-to" | "profile";
-const appVersion = "5.0.2";
+const appVersion = "5.0.3";
 const root = document.querySelector<HTMLDivElement>("#app")!;
 const mobileViewport = window.matchMedia("(max-width: 700px)");
 let page: Page = "home";
@@ -344,6 +344,7 @@ function resultPanel() {
 
 function render() {
   root.innerHTML = page === "home" ? homeView() : page === "mode-select" ? modeSelectView() : page === "game" ? gameView() : page === "multiplayer" ? multiplayerView() : page === "profile" ? profileView() : howToView();
+  if (page === "multiplayer") root.querySelector(".lobby")?.insertAdjacentHTML("afterend", `<section class="private-room arena-card"><p class="eyebrow">IRON YARD</p><h2>PRIVATE FPS 1V1</h2><p>${import.meta.env.VITE_ARENA_SERVER_URL ? "Create or join a six-character room code for the desktop FPS arena." : "Iron Yard needs the separately deployed WebSocket server before private 1v1 rooms can connect."}</p><button id="enter-arena-multiplayer" class="primary">OPEN IRON YARD 1V1</button></section>`);
   if (page === "game" && (mode === "showdown-series" || multiplayerRoom?.mode === "showdown-series")) {
     const shared = multiplayerRoom?.roundState.round;
     const hostView = multiplayerRoom?.hostId === multiplayerUserId;
@@ -404,6 +405,7 @@ function render() {
   root.querySelector("#series-return")?.addEventListener("click", () => multiplayerRoom?.status === "playing" ? void leaveRoom() : nav("mode-select"));
   root.querySelector("#result-return")?.addEventListener("click", () => multiplayerRoom?.status === "playing" ? void leaveRoom() : nav("mode-select"));
   root.querySelector("#quick-game")?.addEventListener("click", () => void startQuickMatch());
+  root.querySelector("#enter-arena-multiplayer")?.addEventListener("click", () => { mode = "arena-skirmish"; nav("game"); });
   root.querySelector("#cancel-search")?.addEventListener("click", () => void cancelQuickMatch());
   root.querySelectorAll<HTMLButtonElement>("[data-queue]").forEach(button => button.addEventListener("click", () => { queueKind = button.dataset.queue as "casual" | "ranked"; render(); }));
   root.querySelector<HTMLFormElement>("#profile-form")?.addEventListener("submit", event => { event.preventDefault(); const input = root.querySelector<HTMLInputElement>("#display-name"); profile.displayName = input?.value.trim().replace(/\s+/g, " ").slice(0, 24) || "Unnamed Drifter"; saveProfile(); render(); });
