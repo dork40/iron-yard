@@ -1,4 +1,4 @@
-# High Noon Authority Service v5.0.1
+# High Noon Authority Service v5.0.2
 
 This deployable service hosts the optional TURN credential issuer, the legacy server-timed rounds example, and Iron Yard private 1v1 rooms. The arena is a competitive networking foundation, not a production matchmaker or ranked service.
 
