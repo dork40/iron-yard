@@ -188,7 +188,7 @@ body { color:var(--paper); background:radial-gradient(ellipse 72% 35% at 50% -8%
 /* v3.8: in-game tactical controls remain visible without competing with mouse lock. */
 .arena-frame { isolation:isolate; }
 .arena-action-bar { position:absolute; z-index:5; right:14px; bottom:48px; left:14px; display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:6px; pointer-events:auto; }
-.arena-action-bar { grid-template-columns:repeat(5,minmax(0,1fr)); }
+.arena-action-bar { grid-template-columns:repeat(6,minmax(0,1fr)); }
 .arena-action-bar button { min-height:37px; border:1px solid rgba(208,231,228,.48); color:#e5f0e9; background:linear-gradient(135deg,rgba(15,27,34,.92),rgba(8,13,17,.92)); font:700 10px var(--mono); letter-spacing:.08em; text-shadow:0 1px #000; }
 .arena-action-bar button:hover { border-color:var(--gold-pale); color:var(--gold-pale); background:#1c3039; }
 .arena-action-bar kbd { margin-left:4px; border-color:rgba(243,215,139,.5); color:var(--gold-pale); font-size:8px; }
@@ -207,7 +207,7 @@ body { color:var(--paper); background:radial-gradient(ellipse 72% 35% at 50% -8%
 /* Fullscreen targets the self-contained game frame, never the surrounding site. */
 .arena-frame:fullscreen { box-sizing:border-box; position:fixed; inset:0; width:min(100vw,calc(100vh * 16 / 9)); height:min(100vh,calc(100vw * 9 / 16)); margin:auto; border:0; background:#090c10; }
 .arena-frame:fullscreen::backdrop { background:#090c10; }
-.arena-frame:fullscreen .arena-action-bar { grid-template-columns:repeat(5,minmax(0,1fr)); }
+.arena-frame:fullscreen .arena-action-bar { grid-template-columns:repeat(6,minmax(0,1fr)); }
 @media (max-width:700px) { .arena-frame:fullscreen .arena-action-bar { grid-template-columns:1fr 1fr; } }
 
 /* Keep the active buy window immediately recognizable in the compact combat HUD. */

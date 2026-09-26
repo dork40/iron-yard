@@ -1,6 +1,14 @@
 # High Noon Showdown
 
-High Noon Showdown v4.2.2 is an original Wild West browser game with local player progression, synthesized Web Audio effects, an AI-only Ghost Challenge personal-best race, casual multiplayer, and Iron Yard: a normal desktop browser FPS vertical slice. Iron Yard uses locally bundled CC0 Kenney character assets; its maps, weapons, sounds, dialogue, and branding remain original.
+High Noon Showdown v4.3.0 is an original Wild West browser game with local player progression, synthesized Web Audio effects, an AI-only Ghost Challenge personal-best race, casual multiplayer, and Iron Yard: a normal desktop browser FPS vertical slice. Iron Yard uses locally bundled CC0 Kenney character assets; its maps, weapons, sounds, dialogue, and branding remain original.
+
+## v4.3.0 Reliable Iron Yard Private 1v1
+
+Iron Yard private 1v1 is now a focused casual room flow: create a six-character code, copy it or use the browser share sheet when available, and join the code from a second browser. The host waits visibly; the match starts automatically when the guest joins. The server sends synchronized player snapshots, health, confirmed shots, server-resolved eliminations, respawns, and per-player elimination/death scores.
+
+The WebSocket client visibly reports connecting, waiting, live, rival-disconnected, reconnecting, closed, and server-error states. A dropped seat is reserved for 30 seconds and the browser retries it up to three times; an explicit **Leave 1v1** immediately frees the seat and **Return to Site** closes the room connection. The server checks strict message shapes, payload size, state cadence, movement bounds/collision, fire cadence, aim drift, server-held positions, hit rays, damage, respawns, and origin rules.
+
+This is deliberately a private, in-memory, casual 1v1 slice. It has no ranked queue, server browser, identity verification, persistent match history, anti-cheat claim, or match result guarantee after a server restart. The client still supplies movement and aim snapshots, so the server validation reduces obvious bad packets but cannot make browser FPS play cheat-proof.
 
 ## v4.2.2 Iron Yard Bot Fire Feedback
 
@@ -10,7 +18,7 @@ Iron Yard fullscreen now targets only the self-contained 16:9 arena frame, so th
 
 Offline Bot Match now offers three original maps. **Iron Yard** is an improved balanced industrial yard with a crane divider and striped cargo bays. **Freight Terminal** has long container lanes, crossing cover, and blue/amber terminal landmarks. **Foundry** is a close-to-mid-range interior built around a glowing furnace, heavy columns, and molten-orange bays. Each map supplies its own geometry, colliders, cover points, bot spawns, player buy spawn, lighting, fog, and background; the selected map locks when a bot match starts and later menu changes do not alter that active match. All environments use the existing locally bundled CC0 materials or generated procedural materials.
 
-Private 1v1 remains intentionally fixed to Iron Yard. The existing private-room protocol does not synchronize a map choice, so this avoids claiming cross-client map selection that it cannot guarantee.
+Private 1v1 remains intentionally fixed to Iron Yard. The server protocol does not synchronize a map choice, so this avoids claiming cross-client map selection that it cannot guarantee.
 
 ## Previous: Iron Yard Buy Phase
 
@@ -314,7 +322,7 @@ Multiplayer begins with an explicit **Casual** or **Ranked** choice. Casual is t
 
 `VITE_AUTHORITY_URL` is optional and must be an HTTPS URL (or localhost during development). It enables only optional TURN relay lookup, never ranked play. The client reads a short-lived authenticated TURN ticket from `sessionStorage["high-noon-turn-ticket"]`; a trusted identity service must issue that ticket after authenticating the player. The client sends it to `GET /v1/turn-credentials` as a bearer token, validates the credential response, and visibly falls back to STUN/Supabase when the URL, ticket, origin, response, relay, or browser support is unavailable. Do not place a TURN secret or long-lived ticket in any `VITE_` variable. See [`server/README.md`](server/README.md) for the signed-ticket protocol, exact CORS origin rules, coturn configuration, and Docker deployment.
 
-`VITE_ARENA_SERVER_URL` is required for Iron Yard and must be the HTTPS base URL of the deployed authority service (or `http://localhost:8080` for local development). The browser derives its `ws:`/`wss:` connection to `/v1/arena`; this value is public build configuration, not a credential. Set the server's `ALLOWED_ORIGINS` to the exact Vite site origin.
+`VITE_ARENA_SERVER_URL` is required for Iron Yard private 1v1 and must be the HTTPS base URL of the separately deployed authority service (or `http://localhost:8080` for local development). The browser derives its `ws:`/`wss:` connection to `/v1/arena`; this value is public build configuration, not a credential. Set the server's `ALLOWED_ORIGINS` to the exact Vite site origin. **Vercel and other static frontend hosts do not run this WebSocket server**: deploy `server/` to a long-running WebSocket-capable host, then rebuild the frontend with its URL.
 
 ## Validation
 
