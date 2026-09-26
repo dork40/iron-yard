@@ -67,7 +67,7 @@ const rooms = new Map<string, Set<Client>>(), matches = new Map<string, Match>()
 const joinMessage = z.object({ type: z.literal("join"), room: z.string().regex(/^[A-Z0-9]{6}$/), seat: z.enum(["host", "guest"]) });
 const actionMessage = z.object({ type: z.literal("action"), reactionMs: z.number().finite().min(0).max(10_000) });
 const server = http.createServer(app);
-const wss = new WebSocketServer({ server, path: "/v1/rounds" });
+const wss = new WebSocketServer({ noServer: true });
 function send(socket: WebSocket, payload: object) { if (socket.readyState === socket.OPEN) socket.send(JSON.stringify(payload)); }
 function broadcast(room: string, payload: object) { rooms.get(room)?.forEach(client => send(client.socket, payload)); }
 wss.on("connection", socket => {
@@ -130,7 +130,7 @@ function simulateArenaPlayer(player: ArenaPlayer, now: number) {
 function recordHistory(room: ArenaRoom) { room.history.push({ tick: arenaTick, players: { host: { x: room.players.host.x, z: room.players.host.z, yaw: room.players.host.yaw, pitch: room.players.host.pitch }, guest: { x: room.players.guest.x, z: room.players.guest.z, yaw: room.players.guest.yaw, pitch: room.players.guest.pitch } } }); const cutoff = arenaTick - Math.ceil(maxRewindMs * tickRate / 1000) - 2; while (room.history.length && room.history[0].tick < cutoff) room.history.shift(); }
 function rewindTarget(room: ArenaRoom, seat: ArenaSeat, requestedTick: number) { const oldest = Math.max(0, arenaTick - Math.ceil(maxRewindMs * tickRate / 1000)); const wanted = Math.min(arenaTick, Math.max(oldest, requestedTick)); return room.history.reduce((nearest, sample) => Math.abs(sample.tick - wanted) < Math.abs(nearest.tick - wanted) ? sample : nearest, room.history[room.history.length - 1])?.players[seat]; }
 
-const arenaWss = new WebSocketServer({ server, path: "/v1/arena" });
+const arenaWss = new WebSocketServer({ noServer: true });
 arenaWss.on("connection", (socket, request) => {
   const origin = request.headers.origin;
   if (origins.length && (!origin || !origins.includes(origin))) return socket.close(1008, "Untrusted browser origin.");
@@ -200,4 +200,10 @@ function arenaStep() {
 setInterval(arenaStep, 1_000 / tickRate).unref();
 app.get("/health", (_request, response) => response.json({ status: "ok", region, tickRate, snapshotRate, tick: arenaTick, tickLagMs, lastTickDurationMs, rooms: arenaRooms.size, players: [...arenaRooms.values()].reduce((count, room) => count + Number(Boolean(room.clients.host)) + Number(Boolean(room.clients.guest)), 0) }));
 app.get("/v1/status", (_request, response) => response.set("Cache-Control", "no-store").json({ status: "ok", region, tickRate, snapshotRate, maxRewindMs, pingWarnMs, tick: arenaTick, tickLagMs, maxTickLagMs, lastTickDurationMs, rooms: arenaRooms.size, players: [...arenaRooms.values()].reduce((count, room) => count + Number(Boolean(room.clients.host)) + Number(Boolean(room.clients.guest)), 0) }));
+server.on("upgrade", (request, socket, head) => {
+  const pathname = new URL(request.url ?? "/", "http://localhost").pathname;
+  const target = pathname === "/v1/rounds" ? wss : pathname === "/v1/arena" ? arenaWss : undefined;
+  if (!target) return socket.destroy();
+  target.handleUpgrade(request, socket, head, client => target.emit("connection", client, request));
+});
 server.listen(port, "0.0.0.0", () => console.log(`Authority service listening on ${port} (${region}, ${tickRate} Hz)`));
