@@ -21,13 +21,15 @@ export function arenaView() { return arenaMenuView(Boolean(arenaSocketUrl()), de
 
 export function mountArena(_onComplete: (result: ArenaResult) => void) {
   stop?.();
-  const arenaFrame = document.querySelector<HTMLElement>(".arena-frame"), host = document.querySelector<HTMLElement>("#arena-canvas"), message = document.querySelector<HTMLElement>("#arena-message"), lock = document.querySelector<HTMLButtonElement>("#arena-lock"), health = document.querySelector<HTMLElement>("#arena-health"), ammo = document.querySelector<HTMLElement>("#arena-ammo"), rival = document.querySelector<HTMLElement>("#arena-rival"), phase = document.querySelector<HTMLElement>("#arena-phase"), cash = document.querySelector<HTMLElement>("#arena-cash"), score = document.querySelector<HTMLElement>("#arena-score"), reticle = document.querySelector<HTMLElement>("#arena-crosshair"), pause = document.querySelector<HTMLElement>("#arena-pause"), feedback = document.querySelector<HTMLElement>("#arena-feedback"), buyCash = document.querySelector<HTMLElement>("#arena-buy-cash"), buyPhase = document.querySelector<HTMLElement>("#arena-buy-phase"), buyZone = document.querySelector<HTMLElement>("#arena-buy-zone"), buyRequirement = document.querySelector<HTMLElement>("#arena-buy-requirement"), fullscreen = document.querySelector<HTMLButtonElement>("#arena-fullscreen"), onlineStatus = document.querySelector<HTMLElement>("#arena-online-status"), copyRoom = document.querySelector<HTMLButtonElement>("#arena-copy-room"), shareRoom = document.querySelector<HTMLButtonElement>("#arena-share-room"), leaveRoom = document.querySelector<HTMLButtonElement>("#arena-leave");
+  const arenaFrame = document.querySelector<HTMLElement>(".arena-frame"), host = document.querySelector<HTMLElement>("#arena-canvas"), message = document.querySelector<HTMLElement>("#arena-message"), lock = document.querySelector<HTMLButtonElement>("#arena-lock"), health = document.querySelector<HTMLElement>("#arena-health"), ammo = document.querySelector<HTMLElement>("#arena-ammo"), rival = document.querySelector<HTMLElement>("#arena-rival"), phase = document.querySelector<HTMLElement>("#arena-phase"), cash = document.querySelector<HTMLElement>("#arena-cash"), score = document.querySelector<HTMLElement>("#arena-score"), reticle = document.querySelector<HTMLElement>("#arena-crosshair"), pause = document.querySelector<HTMLElement>("#arena-pause"), feedback = document.querySelector<HTMLElement>("#arena-feedback"), buyCash = document.querySelector<HTMLElement>("#arena-buy-cash"), buyPhase = document.querySelector<HTMLElement>("#arena-buy-phase"), buyZone = document.querySelector<HTMLElement>("#arena-buy-zone"), buyRequirement = document.querySelector<HTMLElement>("#arena-buy-requirement"), fullscreen = document.querySelector<HTMLButtonElement>("#arena-fullscreen"), onlineStatus = document.querySelector<HTMLElement>("#arena-online-status"), copyRoom = document.querySelector<HTMLButtonElement>("#arena-copy-room"), shareRoom = document.querySelector<HTMLButtonElement>("#arena-share-room"), leaveRoom = document.querySelector<HTMLButtonElement>("#arena-leave"), netDebug = document.querySelector<HTMLElement>("#arena-net-debug");
   if (!arenaFrame || !host || !message || !lock || !health || !ammo || !rival || !phase || !cash || !score || !reticle || !pause || !feedback || !buyCash || !buyPhase || !buyZone || !buyRequirement || !fullscreen) return;
 
   const settings = loadSettings(), scene = new THREE.Scene(), camera = new THREE.PerspectiveCamera(settings.fov, 16 / 9, .05, 90), renderer = createRenderer(host, settings.graphics), colliders: THREE.Box3[] = [], initialMap = buildArenaMap(scene, "iron-yard"), player = new FpsPlayer(camera, colliders), weapon = new WeaponState(), recoil = new Recoil(), network = new ArenaNetwork(), tactical = new TacticalRound();
   colliders.push(...initialMap.colliders); camera.position.copy(initialMap.playerSpawn); scene.add(camera);
   const hemisphere = new THREE.HemisphereLight("#dce9ed", "#343334", 2), sun = new THREE.DirectionalLight("#ffe0bb", 3); sun.castShadow = settings.graphics.shadows; scene.add(hemisphere, sun);
-  let gun = createWeapon(camera, weapon.spec.id), bots: Bot[] = [], remote: THREE.Group | undefined, seat: "host" | "guest" | undefined, online = false, active = false, aiming = false, shots = 0, hits = 0, kills = 0, onlineKills = 0, onlineDeaths = 0, currentRoom = "", lastSync = 0, lastFrame = performance.now(), config: ArenaConfig = { ...defaultArenaConfig }, openPanel: ArenaPanel | undefined, pausedAt = 0, binding: BindingAction | undefined;
+  let gun = createWeapon(camera, weapon.spec.id), bots: Bot[] = [], remote: THREE.Group | undefined, seat: "host" | "guest" | undefined, online = false, active = false, aiming = false, shots = 0, hits = 0, kills = 0, onlineKills = 0, onlineDeaths = 0, currentRoom = "", lastInputSync = 0, lastFrame = performance.now(), config: ArenaConfig = { ...defaultArenaConfig }, openPanel: ArenaPanel | undefined, pausedAt = 0, binding: BindingAction | undefined, correction: THREE.Vector3 | undefined;
+  const remoteSamples: { receivedAt: number; x: number; z: number; yaw: number }[] = [];
+  let pendingInputs: number[] = [];
   const owned = new Set<WeaponId>(["pistol"]);
   const raycaster = new THREE.Raycaster(), muzzle = new THREE.PointLight("#ffbd72", 0, 4); camera.add(muzzle);
   let activeMap: ArenaMap = initialMap;
@@ -101,11 +103,11 @@ export function mountArena(_onComplete: (result: ArenaResult) => void) {
   };
   const spawnBots = () => { bots.forEach(bot => scene.remove(bot.group)); bots = Array.from({ length: config.botCount }, (_, i) => { const group = createFighter(i ? "#405e6a" : "#6a4e47", i % 2 ? "character-f" : "character-a"), spawn = activeMap.botSpawns[i % activeMap.botSpawns.length]; group.position.copy(spawn); scene.add(group); const bot: Bot = { group, health: 100, velocity: new THREE.Vector3(), spawn: group.position.clone(), seed: 0x1a2b3c4d + i, lastSeen: group.position.clone(), nextDecision: 0, reactionUntil: 0, nextShot: 0, reloadUntil: 0, burstShots: 0, strafe: i % 2 ? -1 : 1 }; resetBot(bot, performance.now()); return bot; }); };
   const spawnInBuyZone = () => { camera.position.copy(activeMap.playerSpawn); player.velocity.set(0, 0, 0); player.health = 100; };
-  const deploy = (isOnline = false, mapId: ArenaMapId = "iron-yard") => { setMap(mapId); online = isOnline; pausedAt = 0; if (online) { bots.forEach(bot => scene.remove(bot.group)); bots = []; remote?.removeFromParent(); remote = undefined; onlineKills = 0; onlineDeaths = 0; leaveRoom!.hidden = false; } else { spawnBots(); tactical.start(performance.now()); spawnInBuyZone(); leaveRoom!.hidden = true; } active = true; lock.hidden = false; document.querySelectorAll<HTMLButtonElement>("#arena-fire,#arena-reload,#arena-ads").forEach(button => button.disabled = false); message.textContent = online ? "RIVAL CONNECTED. IRON YARD IS THE ONLINE MAP. CLICK TO DEPLOY." : `${activeMap.name.toUpperCase()} BUY PHASE STARTED. PRESS B TO BUY WEAPONS.`; updateHud(); };
+  const deploy = (isOnline = false, mapId: ArenaMapId = "iron-yard") => { setMap(mapId); online = isOnline; pausedAt = 0; if (online) { bots.forEach(bot => scene.remove(bot.group)); bots = []; remote?.removeFromParent(); remote = undefined; remoteSamples.splice(0); correction = undefined; pendingInputs = []; onlineKills = 0; onlineDeaths = 0; leaveRoom!.hidden = false; } else { spawnBots(); tactical.start(performance.now()); spawnInBuyZone(); leaveRoom!.hidden = true; } active = true; lock.hidden = false; document.querySelectorAll<HTMLButtonElement>("#arena-fire,#arena-reload,#arena-ads").forEach(button => button.disabled = false); message.textContent = online ? "RIVAL CONNECTED. IRON YARD IS THE ONLINE MAP. CLICK TO DEPLOY." : `${activeMap.name.toUpperCase()} BUY PHASE STARTED. PRESS B TO BUY WEAPONS.`; updateHud(); };
   const tracer = (from: THREE.Vector3, to: THREE.Vector3, color = "#ffd28a") => { const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints([from, to]), new THREE.LineBasicMaterial({ color })); scene.add(line); window.setTimeout(() => { scene.remove(line); line.geometry.dispose(); (line.material as THREE.Material).dispose(); }, 90); };
   const wallDistance = (from: THREE.Vector3, direction: THREE.Vector3) => { let nearest = Infinity; for (const box of colliders) { const point = new THREE.Vector3(); if (raycaster.ray.set(from, direction).intersectBox(box, point)) nearest = Math.min(nearest, point.distanceTo(from)); } return nearest; };
   const hitFeedback = (text: string) => { feedback.textContent = text; window.setTimeout(() => { feedback.textContent = ""; }, 380); };
-  const fire = () => { const now = performance.now(); if (!active || openPanel || document.pointerLockElement !== renderer.domElement || !weapon.canFire(now) || (!online && tactical.phase === "round-end")) return; weapon.fired(now); triggerWeaponFire(gun, now); shots++; recoil.kick(weapon.spec.recoil, weapon.spec.recoil * .55); muzzle.intensity = 5; window.setTimeout(() => muzzle.intensity = 0, 35); const origin = camera.position.clone(), direction = new THREE.Vector3(); camera.getWorldDirection(direction); direction.x += (Math.random() - .5) * weapon.spec.spread; direction.y += (Math.random() - .5) * weapon.spec.spread; direction.normalize(); raycaster.set(origin, direction); const wall = wallDistance(origin, direction), impacts = bots.flatMap(bot => { const hit = raycaster.intersectObject(bot.group, true)[0]; return hit && hit.distance < wall ? [{ bot, hit }] : []; }).sort((a, b) => a.hit.distance - b.hit.distance); const impact = impacts[0]?.hit.point ?? origin.clone().addScaledVector(direction, Math.min(wall, 35)); tracer(origin, impact); if (online) network.send({ type: "shot", loadout: weapon.spec.id === "pistol" ? "sidearm" : "carbine", yaw: player.yaw, pitch: player.pitch }); else if (impacts[0]) { const { bot, hit } = impacts[0], headshot = hit.point.y - bot.group.position.y > 1.35; bot.health -= headshot ? weapon.spec.headshot : weapon.spec.damage; hits++; hitFeedback(headshot ? "HEADSHOT" : "HIT"); playSound("impact"); if (bot.health <= 0) { kills++; tactical.elimination(); bot.health = 100; bot.group.position.copy(bot.spawn); resetBot(bot, now); message.textContent = "ELIMINATION. +$300. TARGET REDEPLOYED."; } } playSound(({ frontier: "frontier-shot", modern: "modern-shot", pistol: "pistol-shot" } as const)[weapon.spec.sound]); updateHud(now); };
+  const fire = () => { const now = performance.now(); if (!active || openPanel || document.pointerLockElement !== renderer.domElement || !weapon.canFire(now) || (!online && tactical.phase === "round-end")) return; weapon.fired(now); triggerWeaponFire(gun, now); shots++; recoil.kick(weapon.spec.recoil, weapon.spec.recoil * .55); muzzle.intensity = 5; window.setTimeout(() => muzzle.intensity = 0, 35); const origin = camera.position.clone(), direction = new THREE.Vector3(); camera.getWorldDirection(direction); direction.x += (Math.random() - .5) * weapon.spec.spread; direction.y += (Math.random() - .5) * weapon.spec.spread; direction.normalize(); raycaster.set(origin, direction); const wall = wallDistance(origin, direction), impacts = bots.flatMap(bot => { const hit = raycaster.intersectObject(bot.group, true)[0]; return hit && hit.distance < wall ? [{ bot, hit }] : []; }).sort((a, b) => a.hit.distance - b.hit.distance); const impact = impacts[0]?.hit.point ?? origin.clone().addScaledVector(direction, Math.min(wall, 35)); tracer(origin, impact); if (online) network.send({ type: "shot", loadout: weapon.spec.id === "pistol" ? "sidearm" : "carbine", yaw: player.yaw, pitch: player.pitch, shotTick: network.serverTick() }); else if (impacts[0]) { const { bot, hit } = impacts[0], headshot = hit.point.y - bot.group.position.y > 1.35; bot.health -= headshot ? weapon.spec.headshot : weapon.spec.damage; hits++; hitFeedback(headshot ? "HEADSHOT" : "HIT"); playSound("impact"); if (bot.health <= 0) { kills++; tactical.elimination(); bot.health = 100; bot.group.position.copy(bot.spawn); resetBot(bot, now); message.textContent = "ELIMINATION. +$300. TARGET REDEPLOYED."; } } playSound(({ frontier: "frontier-shot", modern: "modern-shot", pistol: "pistol-shot" } as const)[weapon.spec.sound]); updateHud(now); };
   const input = new DesktopInput(renderer.domElement, (x, y) => player.look(x, y, settings.sensitivity), fire, () => aiming = !aiming, settings.bindings);
   const request = () => { if (active && !openPanel) renderer.domElement.requestPointerLock().catch(() => message.textContent = "POINTER LOCK WAS BLOCKED. CLICK AGAIN."); };
   const resize = () => { const bounds = host.getBoundingClientRect(); renderer.setSize(bounds.width, bounds.height, false); camera.aspect = bounds.width / bounds.height; camera.updateProjectionMatrix(); };
@@ -127,6 +129,9 @@ export function mountArena(_onComplete: (result: ArenaResult) => void) {
     if (copyRoom) copyRoom.disabled = !currentRoom;
     if (shareRoom) shareRoom.hidden = !currentRoom || !navigator.share;
   };
+  const updateNetworkDebug = (value: { transport: string; rttMs: number; jitterMs: number; snapshotLoss: number; snapshotsPerSecond: number; serverTick: number; serverLagMs: number; simulatedDrops: number }) => {
+    if (netDebug) netDebug.textContent = `NET ${value.transport.toUpperCase()} ${value.rttMs}MS +/-${value.jitterMs} | SNAP ${value.snapshotsPerSecond}/S LOSS ${value.snapshotLoss} | TICK ${value.serverTick} LAG ${value.serverLagMs}MS | SIM DROP ${value.simulatedDrops}`;
+  };
   const handleNetwork = (event: ArenaNetworkEvent) => {
     if (event.type === "connection") {
       if (event.status === "connecting") setOnlineStatus("CONNECTING TO THE PRIVATE 1V1 SERVER...");
@@ -141,8 +146,12 @@ export function mountArena(_onComplete: (result: ArenaResult) => void) {
     if (event.type === "state" && active && seat) {
       const own = event.players[seat], other = event.players[seat === "host" ? "guest" : "host"];
       if (!remote) { remote = createFighter("#405e6a", "character-k"); scene.add(remote); applySpawn(own); }
-      remote.position.lerp(new THREE.Vector3(other.x * 8, 0, 1 - other.z * 12), .35);
-      remote.rotation.y = other.yaw + Math.PI;
+      // Local movement is predicted by FpsPlayer; prune acknowledged inputs and blend only server correction.
+      pendingInputs = pendingInputs.filter(sequence => sequence > event.ack[seat]);
+      const confirmed = new THREE.Vector3(own.x * 8, camera.position.y, 1 - own.z * 12);
+      if (camera.position.distanceTo(confirmed) > .12) correction = confirmed;
+      remoteSamples.push({ receivedAt: performance.now(), x: other.x, z: other.z, yaw: other.yaw });
+      while (remoteSamples.length > 12) remoteSamples.shift();
       player.health = own.health; onlineKills = own.kills; onlineDeaths = own.deaths;
       setOnlineStatus(`ROOM ${currentRoom}. LIVE: ${own.kills} ELIMS / ${own.deaths} DEATHS.`);
       updateHud();
@@ -152,6 +161,7 @@ export function mountArena(_onComplete: (result: ArenaResult) => void) {
     if (event.type === "elimination") { hitFeedback(event.killer === seat ? "ELIMINATION" : "YOU WERE ELIMINATED"); message.textContent = event.killer === seat ? "ELIMINATION CONFIRMED." : "YOU WERE ELIMINATED. RESPAWNING."; return; }
     if (event.type === "respawn") { if (event.seat === seat) applySpawn(event.player); message.textContent = event.seat === seat ? "YOU RESPAWNED" : "RIVAL RESPAWNED"; return; }
     if (event.type === "opponent-left") { active = false; document.exitPointerLock?.(); message.textContent = event.reconnecting ? "RIVAL DISCONNECTED. THEIR SEAT IS HELD FOR 30 SECONDS." : "RIVAL LEFT THE PRIVATE ROOM."; setOnlineStatus(event.reconnecting ? "RIVAL DISCONNECTED. WAITING FOR THEIR RECONNECT." : "RIVAL LEFT. CREATE A NEW ROOM OR RETURN TO SITE."); return; }
+    if (event.type === "metrics") { updateNetworkDebug(event.value); return; }
     if (event.type === "error") { message.textContent = event.message; setOnlineStatus(event.message); }
   };
   let suppressPauseForFullscreenExit = false;
@@ -169,6 +179,12 @@ export function mountArena(_onComplete: (result: ArenaResult) => void) {
   if (quality) quality.onchange = () => { settings.graphics = { ...graphicsPresets[quality.value as GraphicsQuality] }; graphics(); };
   if (pixelRatio) pixelRatio.oninput = () => { settings.graphics.pixelRatio = Number(pixelRatio.value); graphics(); };
   if (shadows) shadows.onchange = () => { settings.graphics.shadows = shadows.checked; graphics(); };
+  const simulation = network.simulationSettings(), netLatency = document.querySelector<HTMLInputElement>("#arena-net-latency"), netJitter = document.querySelector<HTMLInputElement>("#arena-net-jitter"), netLoss = document.querySelector<HTMLInputElement>("#arena-net-loss");
+  if (netLatency) netLatency.value = String(simulation.latencyMs);
+  if (netJitter) netJitter.value = String(simulation.jitterMs);
+  if (netLoss) netLoss.value = String(simulation.lossPercent);
+  const applyNetworkSimulation = () => network.setSimulation({ latencyMs: Number(netLatency?.value), jitterMs: Number(netJitter?.value), lossPercent: Number(netLoss?.value) });
+  netLatency?.addEventListener("change", applyNetworkSimulation); netJitter?.addEventListener("change", applyNetworkSimulation); netLoss?.addEventListener("change", applyNetworkSimulation);
   document.querySelector("#settings-reset")?.addEventListener("click", () => { const defaults = structuredClone(defaultSettings); settings.sensitivity = defaults.sensitivity; settings.fov = defaults.fov; Object.assign(settings.crosshair, defaults.crosshair); Object.assign(settings.graphics, defaults.graphics); Object.assign(settings.bindings, defaults.bindings); paintCrosshair(reticle, settings.crosshair); graphics(); syncSettingsControls(); document.querySelector("#binding-notice")!.textContent = "DEFAULT SETTINGS RESTORED."; });
   document.querySelector("#cross-share")?.addEventListener("click", () => navigator.clipboard?.writeText(crosshairCode(settings.crosshair)));
   document.querySelector<HTMLInputElement>("#cross-import")?.addEventListener("change", event => { const value = importCrosshair((event.target as HTMLInputElement).value); if (value) { settings.crosshair = value; paintCrosshair(reticle, value); saveSettings(settings); syncSettingsControls(); } });
@@ -212,6 +228,17 @@ export function mountArena(_onComplete: (result: ArenaResult) => void) {
     if (active && openPanel && !pausedAt) updateHud(now);
     if (active && !openPanel) {
       if (document.pointerLockElement === renderer.domElement) player.update(dt, input);
+      if (online && now - lastInputSync >= 1000 / 60) {
+        lastInputSync = now;
+        const moveX = Number(input.keys.has(input.bindings.right)) - Number(input.keys.has(input.bindings.left));
+        const moveZ = Number(input.keys.has(input.bindings.forward)) - Number(input.keys.has(input.bindings.back));
+        pendingInputs.push(network.sendInput({ moveX, moveZ, sprint: input.keys.has("ShiftLeft"), crouch: input.keys.has("ControlLeft"), jump: input.keys.has(input.bindings.jump), yaw: player.yaw, pitch: player.pitch }));
+        while (pendingInputs.length > 180) pendingInputs.shift();
+      }
+      if (correction) {
+        camera.position.lerp(correction, Math.min(1, dt * 12));
+        if (camera.position.distanceTo(correction) < .02) correction = undefined;
+      }
       if (input.firing && weapon.spec.automatic) fire();
       recoil.update(dt); gun.rotation.x = -recoil.pitch; gun.rotation.y = recoil.yaw;
       updateWeaponViewModel(gun, now, player.velocity.length(), aiming, weapon.reloadProgress(now));
@@ -232,8 +259,17 @@ export function mountArena(_onComplete: (result: ArenaResult) => void) {
         }
       }, botDifficulty));
       bots.forEach(bot => updateFighter(bot.group, dt, now));
-      if (remote) updateFighter(remote, dt, now);
-      if (online && now - lastSync > 67) { lastSync = now; network.send({ type: "state", x: camera.position.x / 8, z: (1 - camera.position.z) / 12, yaw: player.yaw, pitch: player.pitch }); }
+      if (remote) {
+        const renderAt = now - 100;
+        while (remoteSamples.length > 1 && remoteSamples[1].receivedAt <= renderAt) remoteSamples.shift();
+        const sample = remoteSamples[0], nextSample = remoteSamples[1];
+        if (sample) {
+          const blend = nextSample ? THREE.MathUtils.clamp((renderAt - sample.receivedAt) / Math.max(1, nextSample.receivedAt - sample.receivedAt), 0, 1) : 1;
+          const x = THREE.MathUtils.lerp(sample.x, nextSample?.x ?? sample.x, blend), z = THREE.MathUtils.lerp(sample.z, nextSample?.z ?? sample.z, blend), yaw = THREE.MathUtils.lerp(sample.yaw, nextSample?.yaw ?? sample.yaw, blend);
+          remote.position.lerp(new THREE.Vector3(x * 8, 0, 1 - z * 12), Math.min(1, dt * 16)); remote.rotation.y += THREE.MathUtils.euclideanModulo(yaw + Math.PI - remote.rotation.y + Math.PI, Math.PI * 2) - Math.PI;
+        }
+        updateFighter(remote, dt, now);
+      }
       updateHud(now);
     }
     renderer.render(scene, camera); raf = requestAnimationFrame(frame);

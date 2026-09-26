@@ -1,14 +1,16 @@
 # High Noon Showdown
 
-High Noon Showdown v4.3.1 is an original Wild West browser game with local player progression, synthesized Web Audio effects, an AI-only Ghost Challenge personal-best race, casual multiplayer, and Iron Yard: a normal desktop browser FPS vertical slice. Iron Yard uses locally bundled CC0 Kenney character assets; its maps, weapons, sounds, dialogue, and branding remain original.
+High Noon Showdown v5.0.0 is an original Wild West browser game with local player progression, synthesized Web Audio effects, an AI-only Ghost Challenge personal-best race, casual multiplayer, and Iron Yard: a normal desktop browser FPS vertical slice. Iron Yard uses locally bundled CC0 Kenney character assets; its maps, weapons, sounds, dialogue, and branding remain original.
 
-## v4.3.1 Reliable Iron Yard Private 1v1
+## v5.0.0 Competitive Networking Foundation
 
-Iron Yard private 1v1 is now a focused casual room flow: create a six-character code, copy it or use the browser share sheet when available, and join the code from a second browser. The host waits visibly; the match starts automatically when the guest joins. The server sends synchronized player snapshots, health, confirmed shots, server-resolved eliminations, respawns, and per-player elimination/death scores.
+Iron Yard keeps the compatible private six-character create/join/resume room flow, but the arena protocol is now input-driven. The authority runs a fixed 60 Hz simulation (configurable within safe bounds), accepts sequence-numbered bounded movement/aim inputs, acknowledges the last input in 30 Hz snapshots, and owns accepted position, health, shots, eliminations, and respawns. The browser predicts its own movement, blends corrections from acknowledged snapshots, and renders remote snapshots behind a short interpolation delay.
 
-The WebSocket client visibly reports connecting, waiting, live, rival-disconnected, reconnecting, closed, and server-error states. A dropped seat is reserved for 30 seconds and the browser retries it up to three times; an explicit **Leave 1v1** immediately frees the seat and **Return to Site** closes the room connection. The server checks strict message shapes, payload size, state cadence, movement bounds/collision, fire cadence, aim drift, server-held positions, hit rays, damage, respawns, and origin rules.
+Shots are ray-validated by the server. A shot includes the latest observed server tick; target history is retained only for `MAX_REWIND_MS` (150 ms by default), so lag compensation is explicitly limited. Input shape, sequence progression, payload size, message rate, movement bounds/collision, fire cadence, aim drift, origin, and reconnect capability are checked server-side. `/health` and `/v1/status` expose region, configured rates, room/player load, and tick-lag monitoring.
 
-This is deliberately a private, in-memory, casual 1v1 slice. It has no ranked queue, server browser, identity verification, persistent match history, anti-cheat claim, or match result guarantee after a server restart. The client still supplies movement and aim snapshots, so the server validation reduces obvious bad packets but cannot make browser FPS play cheat-proof.
+The browser has a transport interface. WebSocket is the deployed/default path and has reconnect handling. A WebTransport datagram transport is present only for an explicitly configured compatible endpoint (`VITE_ARENA_WEBTRANSPORT_URL`); the bundled Node `ws` service does not support it, so it falls back to WebSocket. Development builds show RTT, jitter, snapshots, loss estimate, server tick lag, and local input/fire/ping simulation controls.
+
+This remains a foundation, not a public competitive service. The private process is in-memory and unauthenticated. FFA, parties, challenges, public browsing, ranked queues, region selection, persistent results, identity, anti-cheat, and match guarantees require a deployed matchmaker, persistent regional arena processes, durable storage, operational monitoring, and authenticated session tickets. `VITE_ARENA_REGIONS` is only a static directory/status-ping contract; it does not select, reserve, or create matches.
 
 ## v4.2.2 Iron Yard Bot Fire Feedback
 
@@ -74,7 +76,7 @@ Iron Yard now renders its compact multiplayer arena with Three.js/WebGL and loca
 
 ## Iron Yard Arena Mode
 
-Iron Yard is an original compact 1v1 arena shooter rendered with Three.js/WebGL, with procedural brick, concrete, and floor textures, first-person mouse look, WASD movement, two weapon loadouts, and a live rival. Start it from `PLAY`, select **Iron Yard**, then create a room code or join a friend's. The dedicated WebSocket server provides 15 Hz player-state snapshots and server-side hit/damage resolution. It does not use or imitate third-party shooter branding or assets.
+Iron Yard is an original compact 1v1 arena shooter rendered with Three.js/WebGL, with procedural brick, concrete, and floor textures, first-person mouse look, WASD movement, two weapon loadouts, and a live rival. Start it from `PLAY`, select **Iron Yard**, then create a room code or join a friend's. The dedicated WebSocket server runs a 60 Hz authoritative simulation and sends 30 Hz snapshots by default. It does not use or imitate third-party shooter branding or assets.
 
 ## v3.1.0 Visual Refresh
 
@@ -324,6 +326,8 @@ Multiplayer begins with an explicit **Casual** or **Ranked** choice. Casual is t
 
 `VITE_ARENA_SERVER_URL` is required for Iron Yard private 1v1 and must be the HTTPS base URL of the separately deployed authority service (or `http://localhost:8080` for local development). The browser derives its `ws:`/`wss:` connection to `/v1/arena`; this value is public build configuration, not a credential. Set the server's `ALLOWED_ORIGINS` to the exact Vite site origin. **Vercel and other static frontend hosts do not run this WebSocket server**: deploy `server/` to a long-running WebSocket-capable host, then rebuild the frontend with its URL.
 
+`VITE_ARENA_REGIONS` may be a JSON array of `{ "id", "label", "url", "statusUrl?", "webTransportUrl?" }`. `estimateArenaRegionPing` only measures the region's unauthenticated `GET /v1/status` response before any match request. It is configuration scaffolding, not a directory service. `VITE_ARENA_WEBTRANSPORT_URL` is used only when it points to a separately deployed compatible HTTPS WebTransport datagram endpoint; it is not compatible with this Node `ws` server. `VITE_ARENA_NET_SIMULATION` accepts `{ "latencyMs", "jitterMs", "lossPercent" }` for local developer testing, and development builds also expose those controls in Settings.
+
 ## Validation
 
 GitHub Actions in `.github/workflows/build.yml` installs and builds both the browser client and `server/` on every push and pull request. The repository intentionally has no lockfile, so the workflow uses `npm install` rather than `npm ci`.
@@ -335,7 +339,8 @@ GitHub Actions in `.github/workflows/build.yml` installs and builds both the bro
 - `src/main.ts` - browser UI, AI gameplay, and multiplayer lobby wiring
 - `src/game/rules.ts` - pure versus-AI timing and duel resolution rules
 - `src/game/arena.ts` - Iron Yard runtime composition and UI bridge
-- `src/game/input.ts`, `player.ts`, `weapons.ts`, `recoil.ts`, `bots.ts`, `maps.ts`, `rendering.ts`, `networking.ts`, `crosshair.ts`, `settings.ts` - focused desktop FPS systems
+- `src/game/networking.ts` - arena transport interface, WebSocket default, explicitly configured WebTransport adapter, region status-ping contract, packet simulation, input sequencing, and client connection metrics
+- `src/game/input.ts`, `player.ts`, `weapons.ts`, `recoil.ts`, `bots.ts`, `maps.ts`, `rendering.ts`, `crosshair.ts`, `settings.ts` - focused desktop FPS systems
 - `src/style.css` - v3.1 frontier visual system, responsive game surfaces, and mobile-safe target styling
 - `src/services/authority.ts` - optional authenticated TURN ticket and credential contract
-- `server/` - separately deployable HTTP/WebSocket service, including the live Iron Yard 1v1 room protocol and TURN credential foundation; not a production ranked system
+- `server/` - separately deployable HTTP/WebSocket service, including the 60 Hz authoritative private-room arena protocol, status/tick monitoring, and TURN credential foundation; not a production matchmaker or ranked system

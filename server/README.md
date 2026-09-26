@@ -1,33 +1,39 @@
-# High Noon Authority Service
+# High Noon Authority Service v5.0.0
 
-This is a deployable TURN credential issuer and authority-round foundation. It also hosts the live Iron Yard private 1v1 arena WebSocket. Arena rooms are in memory and browser sockets are origin-checked but not identity-authenticated, so it needs durable storage, identity verification, abuse controls, and observability before competitive/ranked use.
+This deployable service hosts the optional TURN credential issuer, the legacy server-timed rounds example, and Iron Yard private 1v1 rooms. The arena is a competitive networking foundation, not a production matchmaker or ranked service.
 
 ## Deploy
 
-1. Create a separate Node/Docker service on Render, Fly.io, Railway, or another long-running WebSocket-capable container host. Do not deploy this WebSocket service to Vercel, a static host, or a Vercel function runtime. Vercel can host only the frontend.
-2. Set `ALLOWED_ORIGINS` to the exact Vercel game origin. This is the only required setting for private arena rooms. TURN credentials are optional and require `TURN_SHARED_SECRET`, `TURN_URLS`, and `TURN_TICKET_SECRET`; never place those values in `VITE_` variables or browser storage.
-3. Wildcards, paths, and trailing slashes are not accepted in `ALLOWED_ORIGINS`. Add TURN URLs and secrets only when deploying coturn for optional relay support.
-4. Publish this service behind HTTPS. Build with `npm install && npm run build`, or run `docker build -t high-noon-authority .` followed by `docker run --env-file .env -p 8080:8080 high-noon-authority`. The image has a `/health` health check.
-5. Set `VITE_AUTHORITY_URL=https://authority.example` only when optional relay retrieval is needed. Set `VITE_ARENA_SERVER_URL=https://authority.example` in the browser build environment to enable Iron Yard 1v1.
+1. Deploy `server/` as a long-running Node/Docker service on Render, Fly.io, Railway, or another WebSocket-capable container host. Do not deploy it to Vercel, a static host, or a function runtime.
+2. Set `ALLOWED_ORIGINS` to exact frontend origins and set `ARENA_REGION` to a stable deployment label such as `us-east`.
+3. Set `TICK_RATE=60`, `SNAPSHOT_RATE=30`, `MAX_REWIND_MS=150`, and `PING_WARN_MS=120` unless you have measured a reason to change them. Values are bounded by the service.
+4. Publish behind HTTPS and configure `VITE_ARENA_SERVER_URL=https://authority.example` in the frontend build. The WebSocket path is derived as `/v1/arena`.
+5. Build with `npm install && npm run build`, or build the supplied Docker image. `/health` is the container health endpoint.
+
+## Arena Protocol
+
+Private create, join, leave, and resume rooms remain compatible conceptually: a host sends `{ "type": "create" }`, a guest sends `{ "type": "join", "room": "ABC123" }`, and a reconnecting client sends its opaque room reconnect token. Rooms, scores, tokens, history, and reservations are memory-only and disappear on process restart.
+
+After both seats connect, the client sends bounded sequenced input packets:
+
+```json
+{ "type": "input", "sequence": 42, "moveX": 0, "moveZ": 1, "sprint": false, "crouch": false, "jump": false, "yaw": 1.2, "pitch": 0.1 }
+```
+
+The server simulates movement at `TICK_RATE`, emits snapshots at `SNAPSHOT_RATE`, and includes `serverTick`, `serverTime`, and each seat's acknowledged input sequence. It does not accept client position or client hit claims. Shot packets use a latest-observed `shotTick`; target position is selected from server history clamped to `MAX_REWIND_MS`, then the server performs the ray, wall, cooldown, damage, elimination, and respawn checks.
+
+Packets are limited to 1 KiB and 150 messages per second per socket. Zod schemas, sequence monotonicity, movement/collision bounds, aim drift, fire cadence, origin checks, and reconnect reservation checks are enforced. These checks reduce malformed and obvious bad packets; they are not an anti-cheat system and do not authenticate players.
+
+`GET /health` and `GET /v1/status` return region, configured tick/snapshot rates, current tick, tick lag, last tick duration, room count, and connected player count. A static frontend region configuration can measure `/v1/status` RTT before connecting. It does not implement server discovery or matchmaking.
+
+## Transport
+
+The bundled service supports WebSocket only. The frontend normally uses this path and reconnects a reserved seat up to three times. A client WebTransport datagram adapter exists only for `VITE_ARENA_WEBTRANSPORT_URL` pointing at a separately deployed compatible endpoint. Do not point that variable at this Node `ws` service or claim WebTransport is live here; the client falls back to WebSocket when that attempt cannot open.
+
+## What This Does Not Provide
+
+There is no public FFA, party system, challenge system, public server browser, ranked queue, region allocator, durable match records, player identity, session tickets, anti-cheat, DDoS protection, or result guarantee. Those features require an authenticated matchmaker, persistent regional arena processes, durable storage, telemetry/alerting, and operational capacity management.
 
 ## TURN Credential API
 
-`GET /v1/turn-credentials` is browser-origin restricted, rate-limited, and sends `Cache-Control: no-store`. It requires an exact allowed `Origin` and `Authorization: Bearer <ticket>`.
-
-The ticket is `base64url(JSON payload).base64url(HMAC-SHA256(payload, TURN_TICKET_SECRET))`. The payload must contain a non-empty `sub` string and an integer Unix `exp` no more than 15 minutes in the future. A trusted identity service must authenticate the player, create this ticket server-side, and place only the short-lived ticket into the current browser session. This scaffold deliberately does not include identity issuance.
-
-Successful responses are `{ "iceServers": [{ "urls": [...], "username": "...", "credential": "..." }], "expiresAt": "..." }`. Credentials use coturn's REST shared-secret scheme and expire at the earlier of `TURN_TTL_SECONDS` and the ticket expiry. Invalid tickets return `401`; unknown browser origins return `403`; missing TURN configuration returns `503`. Do not log tickets or responses.
-
-The game reads the ephemeral ticket from `sessionStorage["high-noon-turn-ticket"]` and sends it only to the configured HTTPS authority. If the URL, ticket, response, relay, or browser WebRTC support is unavailable, the client clearly reports that state and continues with public STUN and Supabase database fallback.
-
-`/v1/rounds` demonstrates a server-timed, validated WebSocket message shape. Its volatile memory is deliberately unsuitable for production ranking. Authenticate the WebSocket upgrade, issue room-scoped signed tickets, persist match state, and measure/validate actions server-side before connecting it to a ranked UI.
-
-## Iron Yard Arena WebSocket
-
-`/v1/arena` accepts browser WebSockets only from `ALLOWED_ORIGINS` when that variable is set. The client sends `{ "type": "create" }` to receive a six-character room code, or `{ "type": "join", "room": "ABC123" }` to take its only guest seat. The match starts automatically when both seats are connected. The host can copy/share the displayed code; this is private-code matchmaking only, with no server browser.
-
-Clients send bounded `{ "type": "state", "x", "z", "yaw", "pitch" }` updates at approximately 15 Hz and `{ "type": "shot", "loadout", "yaw", "pitch" }`. Strict Zod schemas, a 1 KiB payload cap, state cadence limit, movement-distance/collision checks, fire cadence, and aim-drift bounds reject basic bad input. The server owns accepted positions, hit rays, damage, health, eliminations/deaths, respawns, and disconnect broadcasts; snapshots expose only public player state.
-
-Each seat receives an opaque reconnect token in its `joined` event. An unexpected close reserves that seat for 30 seconds; the browser retries `{ "type": "resume", "room", "reconnectToken" }` up to three times. `{ "type": "leave" }` frees the seat immediately. Tokens are only reconnect capability for this in-memory casual room, not player identity or an anti-cheat credential.
-
-Room state is intentionally volatile: a deployment restart ends active matches, scores, reservations, and reconnects. This is a casual protocol, not cheat-proof matchmaking or ranked play. The browser still controls its movement and aim snapshots; validation is deliberately basic and does not detect modified clients. The browser uses Three.js/WebGL and generates its world materials locally.
+`GET /v1/turn-credentials` is browser-origin restricted, rate-limited, and sends `Cache-Control: no-store`. It requires `Authorization: Bearer <ticket>`. The ticket is `base64url(JSON payload).base64url(HMAC-SHA256(payload, TURN_TICKET_SECRET))`, with non-empty `sub` and an integer `exp` no more than 15 minutes ahead. A trusted identity service must issue it. Successful responses contain coturn REST shared-secret credentials; never put TURN secrets or long-lived tickets in `VITE_` variables.

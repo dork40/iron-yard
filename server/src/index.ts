@@ -7,8 +7,18 @@ import helmet from "helmet";
 import { WebSocketServer, type WebSocket } from "ws";
 import { z } from "zod";
 
-const port = Number(process.env.PORT ?? 8080);
+const boundedInteger = (raw: string | undefined, fallback: number, min: number, max: number) => {
+  const value = Number(raw);
+  return Number.isInteger(value) && value >= min && value <= max ? value : fallback;
+};
+const port = boundedInteger(process.env.PORT, 8080, 1, 65_535);
 const origins = (process.env.ALLOWED_ORIGINS ?? "").split(",").map(value => value.trim()).filter(Boolean);
+const region = (process.env.ARENA_REGION ?? "local").trim().slice(0, 32) || "local";
+const tickRate = boundedInteger(process.env.TICK_RATE, 60, 30, 120);
+const snapshotRate = boundedInteger(process.env.SNAPSHOT_RATE, 30, 1, tickRate);
+const maxRewindMs = boundedInteger(process.env.MAX_REWIND_MS, 150, 0, 300);
+const pingWarnMs = boundedInteger(process.env.PING_WARN_MS, 120, 1, 5_000);
+const reconnectMs = boundedInteger(process.env.RECONNECT_MS, 30_000, 1_000, 120_000);
 const turnSecret = process.env.TURN_SHARED_SECRET;
 const turnTicketSecret = process.env.TURN_TICKET_SECRET;
 const turnUrls = (process.env.TURN_URLS ?? "").split(",").map(value => value.trim()).filter(Boolean);
@@ -25,8 +35,8 @@ app.use("/v1/turn-credentials", (request, response, next) => {
   if (!origin || !origins.includes(origin)) return response.status(403).json({ error: "Untrusted browser origin." });
   return next();
 });
-app.get("/health", (_request, response) => response.json({ status: "ok" }));
 app.use("/v1/turn-credentials", rateLimit({ windowMs: 60_000, limit: 20, standardHeaders: "draft-7", legacyHeaders: false }));
+
 function verifyTurnTicket(ticket: string | undefined) {
   if (!ticket || !turnTicketSecret) return null;
   const [encodedPayload, suppliedSignature, ...extra] = ticket.split(".");
@@ -46,21 +56,16 @@ app.get("/v1/turn-credentials", (request, response) => {
   if (!turnSecret || !validTurnUrls || !turnTicketSecret) return response.status(503).json({ error: "TURN issuer is not configured." });
   const ticket = verifyTurnTicket(supplied);
   if (!ticket) return response.status(401).json({ error: "A valid short-lived TURN ticket is required." });
-  const now = Math.floor(Date.now() / 1000);
-  // Never mint a relay credential that outlives the authenticated ticket.
-  const expires = now + Math.min(ttlSeconds, ticket.exp - now);
+  const now = Math.floor(Date.now() / 1000), expires = now + Math.min(ttlSeconds, ticket.exp - now);
   const username = `${expires}:hn-${crypto.createHash("sha256").update(ticket.sub).digest("hex").slice(0, 20)}`;
-  const credential = crypto.createHmac("sha1", turnSecret).update(username).digest("base64");
-  return response.json({ iceServers: [{ urls: turnUrls, username, credential }], expiresAt: new Date(expires * 1000).toISOString() });
+  return response.json({ iceServers: [{ urls: turnUrls, username, credential: crypto.createHmac("sha1", turnSecret).update(username).digest("base64") }], expiresAt: new Date(expires * 1000).toISOString() });
 });
 
 type Client = { socket: WebSocket; room?: string; seat?: "host" | "guest" };
 type Match = { startedAt: number; actions: Partial<Record<"host" | "guest", { receivedAt: number }>> };
-const rooms = new Map<string, Set<Client>>();
-const matches = new Map<string, Match>();
+const rooms = new Map<string, Set<Client>>(), matches = new Map<string, Match>();
 const joinMessage = z.object({ type: z.literal("join"), room: z.string().regex(/^[A-Z0-9]{6}$/), seat: z.enum(["host", "guest"]) });
 const actionMessage = z.object({ type: z.literal("action"), reactionMs: z.number().finite().min(0).max(10_000) });
-
 const server = http.createServer(app);
 const wss = new WebSocketServer({ server, path: "/v1/rounds" });
 function send(socket: WebSocket, payload: object) { if (socket.readyState === socket.OPEN) socket.send(JSON.stringify(payload)); }
@@ -69,8 +74,7 @@ wss.on("connection", socket => {
   const client: Client = { socket };
   socket.on("message", raw => {
     try {
-      const message = JSON.parse(raw.toString()) as unknown;
-      const join = joinMessage.safeParse(message);
+      const message = JSON.parse(raw.toString()) as unknown, join = joinMessage.safeParse(message);
       if (join.success) {
         client.room = join.data.room; client.seat = join.data.seat;
         const occupants = rooms.get(client.room) ?? new Set<Client>();
@@ -79,157 +83,121 @@ wss.on("connection", socket => {
         if (occupants.size === 2) { const startedAt = Date.now() + 3000; matches.set(client.room, { startedAt, actions: {} }); broadcast(client.room, { type: "round-start", startedAt }); }
         return;
       }
-      const action = actionMessage.safeParse(message);
-      const match = client.room ? matches.get(client.room) : undefined;
+      const action = actionMessage.safeParse(message), match = client.room ? matches.get(client.room) : undefined;
       if (!action.success || !match || !client.seat || Date.now() < match.startedAt) return send(socket, { type: "error", message: "Invalid or premature action." });
       if (match.actions[client.seat]) return send(socket, { type: "error", message: "Action already recorded." });
-      // Ignore client-reported timing: receipt time is the authority's clock for this foundation.
       match.actions[client.seat] = { receivedAt: Date.now() };
       if (match.actions.host && match.actions.guest) { const winner = match.actions.host.receivedAt === match.actions.guest.receivedAt ? "tie" : match.actions.host.receivedAt < match.actions.guest.receivedAt ? "host" : "guest"; broadcast(client.room!, { type: "round-result", winner }); matches.delete(client.room!); }
     } catch { send(socket, { type: "error", message: "Malformed message." }); }
   });
   socket.on("close", () => { if (!client.room) return; const occupants = rooms.get(client.room); occupants?.delete(client); if (!occupants?.size) { rooms.delete(client.room); matches.delete(client.room); } });
 });
+
 type ArenaSeat = "host" | "guest";
-type ArenaPlayer = { x: number; z: number; yaw: number; pitch: number; health: number; kills: number; deaths: number; lastShotAt: number; lastPositionAt: number };
-type ArenaRoom = { clients: Partial<Record<ArenaSeat, WebSocket>>; reconnectTokens: Partial<Record<ArenaSeat, string>>; disconnectTimers: Partial<Record<ArenaSeat, NodeJS.Timeout>>; players: Record<ArenaSeat, ArenaPlayer>; started: boolean };
+type ArenaInput = { sequence: number; moveX: number; moveZ: number; sprint: boolean; crouch: boolean; jump: boolean; yaw: number; pitch: number; receivedAt: number };
+type ArenaPlayer = { x: number; z: number; yaw: number; pitch: number; health: number; kills: number; deaths: number; lastShotAt: number; input: ArenaInput; ack: number };
+type ArenaHistory = { tick: number; players: Record<ArenaSeat, Pick<ArenaPlayer, "x" | "z" | "yaw" | "pitch">> };
+type ArenaRoom = { clients: Partial<Record<ArenaSeat, WebSocket>>; reconnectTokens: Partial<Record<ArenaSeat, string>>; disconnectTimers: Partial<Record<ArenaSeat, NodeJS.Timeout>>; players: Record<ArenaSeat, ArenaPlayer>; history: ArenaHistory[]; started: boolean };
 const arenaRooms = new Map<string, ArenaRoom>();
+let arenaTick = 0, lastTickDurationMs = 0, tickLagMs = 0, maxTickLagMs = 0, expectedTickAt = Date.now();
 const arenaRoomCode = () => crypto.randomBytes(3).toString("hex").toUpperCase();
 const arenaJoin = z.discriminatedUnion("type", [z.object({ type: z.literal("create") }).strict(), z.object({ type: z.literal("join"), room: z.string().regex(/^[A-Z0-9]{6}$/) }).strict(), z.object({ type: z.literal("resume"), room: z.string().regex(/^[A-Z0-9]{6}$/), reconnectToken: z.string().regex(/^[a-f0-9]{48}$/) }).strict()]);
 const arenaLeave = z.object({ type: z.literal("leave") }).strict();
-const arenaState = z.object({ type: z.literal("state"), x: z.number().finite().min(-1.89).max(1.89), z: z.number().finite().min(-1).max(2), yaw: z.number().finite().min(-100).max(100), pitch: z.number().finite().min(-1.3).max(1.3) }).strict();
-const arenaShot = z.object({ type: z.literal("shot"), loadout: z.enum(["sidearm", "carbine"]), yaw: z.number().finite().min(-100).max(100), pitch: z.number().finite().min(-1.3).max(1.3) }).strict();
+const arenaInput = z.object({ type: z.literal("input"), sequence: z.number().int().min(1).max(2_147_483_647), moveX: z.number().finite().min(-1).max(1), moveZ: z.number().finite().min(-1).max(1), sprint: z.boolean(), crouch: z.boolean(), jump: z.boolean(), yaw: z.number().finite().min(-100).max(100), pitch: z.number().finite().min(-1.3).max(1.3) }).strict();
+const arenaShot = z.object({ type: z.literal("shot"), loadout: z.enum(["sidearm", "carbine"]), yaw: z.number().finite().min(-100).max(100), pitch: z.number().finite().min(-1.3).max(1.3), shotTick: z.number().int().min(0).max(2_147_483_647) }).strict();
+const arenaPing = z.object({ type: z.literal("ping"), sentAt: z.number().finite().min(0).max(1e12) }).strict();
 const arenaWalls = [[-22.5, 22.5, -22.5, -21.5], [-22.5, 22.5, 21.5, 22.5], [-22.5, -21.5, -22.5, 22.5], [21.5, 22.5, -22.5, 22.5], [-11.5, -6.5, -7.5, -4.5], [5.5, 10.5, 2.5, 5.5], [-1.5, 1.5, -3.5, 3.5], [-8.5, -5.5, 8.5, 11.5], [8.5, 11.5, -12.5, -9.5]] as const;
 function insideArenaWall(x: number, z: number) { return arenaWalls.some(([minX, maxX, minZ, maxZ]) => x > minX - .45 && x < maxX + .45 && z > minZ - .45 && z < maxZ + .45); }
 function wallBeforeTarget(x: number, z: number, directionX: number, directionZ: number, targetDistance: number) { let nearest = Infinity; for (const [minX, maxX, minZ, maxZ] of arenaWalls) { let near = -Infinity, far = Infinity; for (const [origin, direction, min, max] of [[x, directionX, minX, maxX], [z, directionZ, minZ, maxZ]] as const) { if (Math.abs(direction) < .000001) { if (origin < min || origin > max) { near = Infinity; break; } continue; } const first = (min - origin) / direction, second = (max - origin) / direction; near = Math.max(near, Math.min(first, second)); far = Math.min(far, Math.max(first, second)); } if (near <= far && far >= 0) nearest = Math.min(nearest, Math.max(0, near)); } return nearest < targetDistance; }
 function arenaSend(socket: WebSocket, payload: object) { if (socket.readyState === socket.OPEN) socket.send(JSON.stringify(payload)); }
 function publicArenaPlayer(player: ArenaPlayer) { return { x: player.x, z: player.z, yaw: player.yaw, pitch: player.pitch, health: player.health, kills: player.kills, deaths: player.deaths }; }
-function arenaSnapshot(room: ArenaRoom) { return { type: "state", started: room.started, players: { host: publicArenaPlayer(room.players.host), guest: publicArenaPlayer(room.players.guest) } }; }
+function arenaSnapshot(room: ArenaRoom) { return { type: "state", started: room.started, serverTick: arenaTick, serverTime: Date.now(), ack: { host: room.players.host.ack, guest: room.players.guest.ack }, players: { host: publicArenaPlayer(room.players.host), guest: publicArenaPlayer(room.players.guest) } }; }
 function broadcastArena(room: ArenaRoom, payload: object) { Object.values(room.clients).forEach(socket => socket && arenaSend(socket, payload)); }
-function newArenaPlayer(x: number, z: number, yaw: number, score?: Pick<ArenaPlayer, "kills" | "deaths">): ArenaPlayer { return { x, z, yaw, pitch: 0, health: 100, kills: score?.kills ?? 0, deaths: score?.deaths ?? 0, lastShotAt: 0, lastPositionAt: Date.now() }; }
+function newArenaPlayer(x: number, z: number, yaw: number, score?: Pick<ArenaPlayer, "kills" | "deaths">): ArenaPlayer { return { x, z, yaw, pitch: 0, health: 100, kills: score?.kills ?? 0, deaths: score?.deaths ?? 0, lastShotAt: 0, input: { sequence: 0, moveX: 0, moveZ: 0, sprint: false, crouch: false, jump: false, yaw, pitch: 0, receivedAt: Date.now() }, ack: 0 }; }
 function clearArenaDisconnect(room: ArenaRoom, seat: ArenaSeat) { const timer = room.disconnectTimers[seat]; if (timer) clearTimeout(timer); delete room.disconnectTimers[seat]; }
-function discardArenaSeat(roomCode: string, room: ArenaRoom, seat: ArenaSeat) {
-  clearArenaDisconnect(room, seat);
-  delete room.clients[seat];
-  delete room.reconnectTokens[seat];
-  const rival: ArenaSeat = seat === "host" ? "guest" : "host";
-  room.started = false;
-  if (room.clients[rival]) broadcastArena(room, { type: "opponent-left", reconnecting: false });
-  else if (!room.reconnectTokens.host && !room.reconnectTokens.guest) arenaRooms.delete(roomCode);
+function discardArenaSeat(roomCode: string, room: ArenaRoom, seat: ArenaSeat) { clearArenaDisconnect(room, seat); delete room.clients[seat]; delete room.reconnectTokens[seat]; const rival: ArenaSeat = seat === "host" ? "guest" : "host"; room.started = false; if (room.clients[rival]) broadcastArena(room, { type: "opponent-left", reconnecting: false }); else if (!room.reconnectTokens.host && !room.reconnectTokens.guest) arenaRooms.delete(roomCode); }
+function simulateArenaPlayer(player: ArenaPlayer, now: number) {
+  const input = player.input;
+  player.yaw = input.yaw; player.pitch = input.pitch;
+  if (now - input.receivedAt > 250) return;
+  const length = Math.hypot(input.moveX, input.moveZ) || 1, speed = input.crouch ? 3 : input.sprint ? 7.2 : 5;
+  const worldX = player.x * 8, worldZ = 1 - player.z * 12;
+  const dx = (input.moveX * Math.cos(input.yaw) - input.moveZ * Math.sin(input.yaw)) / length;
+  const dz = (-input.moveX * Math.sin(input.yaw) - input.moveZ * Math.cos(input.yaw)) / length;
+  const nextX = worldX + dx * speed / tickRate, nextZ = worldZ + dz * speed / tickRate;
+  if (nextX > -21 && nextX < 21 && nextZ > -21 && nextZ < 21 && !insideArenaWall(nextX, nextZ)) { player.x = nextX / 8; player.z = (1 - nextZ) / 12; }
 }
+function recordHistory(room: ArenaRoom) { room.history.push({ tick: arenaTick, players: { host: { x: room.players.host.x, z: room.players.host.z, yaw: room.players.host.yaw, pitch: room.players.host.pitch }, guest: { x: room.players.guest.x, z: room.players.guest.z, yaw: room.players.guest.yaw, pitch: room.players.guest.pitch } } }); const cutoff = arenaTick - Math.ceil(maxRewindMs * tickRate / 1000) - 2; while (room.history.length && room.history[0].tick < cutoff) room.history.shift(); }
+function rewindTarget(room: ArenaRoom, seat: ArenaSeat, requestedTick: number) { const oldest = Math.max(0, arenaTick - Math.ceil(maxRewindMs * tickRate / 1000)); const wanted = Math.min(arenaTick, Math.max(oldest, requestedTick)); return room.history.reduce((nearest, sample) => Math.abs(sample.tick - wanted) < Math.abs(nearest.tick - wanted) ? sample : nearest, room.history[room.history.length - 1])?.players[seat]; }
+
 const arenaWss = new WebSocketServer({ server, path: "/v1/arena" });
 arenaWss.on("connection", (socket, request) => {
   const origin = request.headers.origin;
   if (origins.length && (!origin || !origins.includes(origin))) return socket.close(1008, "Untrusted browser origin.");
-  let roomCode: string | undefined;
-  let seat: ArenaSeat | undefined;
-  let lastStateAt = 0;
-  let rateWindowAt = Date.now();
-  let rateCount = 0;
-  let explicitLeave = false;
+  let roomCode: string | undefined, seat: ArenaSeat | undefined, rateWindowAt = Date.now(), rateCount = 0, explicitLeave = false;
   socket.on("message", raw => {
     try {
       const now = Date.now();
       if (now - rateWindowAt >= 1_000) { rateWindowAt = now; rateCount = 0; }
-      if (++rateCount > 45) return socket.close(1008, "Arena message rate exceeded.");
+      if (++rateCount > 150) return socket.close(1008, "Arena message rate exceeded.");
       const rawText = Buffer.isBuffer(raw) ? raw.toString() : Array.isArray(raw) ? Buffer.concat(raw).toString() : Buffer.from(raw).toString();
-      if (Buffer.byteLength(rawText) > 1024) return arenaSend(socket, { type: "error", message: "Arena message is too large." });
-      const message = JSON.parse(rawText) as unknown;
-      const joining = arenaJoin.safeParse(message);
+      if (Buffer.byteLength(rawText) > 1024) return socket.close(1008, "Arena message is too large.");
+      const message = JSON.parse(rawText) as unknown, joining = arenaJoin.safeParse(message);
       if (joining.success) {
         if (roomCode) return arenaSend(socket, { type: "error", message: "Already joined a room." });
         if (joining.data.type === "create") {
           do { roomCode = arenaRoomCode(); } while (arenaRooms.has(roomCode));
           seat = "host";
-          arenaRooms.set(roomCode, { clients: { host: socket }, reconnectTokens: { host: crypto.randomBytes(24).toString("hex") }, disconnectTimers: {}, players: { host: newArenaPlayer(-.18, .6, 2.75), guest: newArenaPlayer(.18, 1.18, -.4) }, started: false });
+          arenaRooms.set(roomCode, { clients: { host: socket }, reconnectTokens: { host: crypto.randomBytes(24).toString("hex") }, disconnectTimers: {}, players: { host: newArenaPlayer(-.18, .6, 2.75), guest: newArenaPlayer(.18, 1.18, -.4) }, history: [], started: false });
         } else if (joining.data.type === "join") {
-          roomCode = joining.data.room;
-          const room = arenaRooms.get(roomCode);
+          roomCode = joining.data.room; const room = arenaRooms.get(roomCode);
           if (!room) return arenaSend(socket, { type: "error", message: "Room not found. Check the code." });
           if (room.clients.guest || room.reconnectTokens.guest) return arenaSend(socket, { type: "error", message: "Room is full or its guest is reconnecting." });
           seat = "guest"; room.clients.guest = socket; room.reconnectTokens.guest = crypto.randomBytes(24).toString("hex"); room.started = Boolean(room.clients.host && room.clients.guest);
         } else {
-          roomCode = joining.data.room;
-          const room = arenaRooms.get(roomCode);
+          roomCode = joining.data.room; const room = arenaRooms.get(roomCode);
           const resumedSeat = room && (room.reconnectTokens.host === joining.data.reconnectToken ? "host" : room.reconnectTokens.guest === joining.data.reconnectToken ? "guest" : undefined);
           if (!room || !resumedSeat || room.clients[resumedSeat]) return arenaSend(socket, { type: "error", message: "That reconnect reservation is no longer available." });
-          seat = resumedSeat;
-          clearArenaDisconnect(room, seat);
-          room.clients[seat] = socket;
-          room.started = Boolean(room.clients.host && room.clients.guest);
+          seat = resumedSeat; clearArenaDisconnect(room, seat); room.clients[seat] = socket; room.started = Boolean(room.clients.host && room.clients.guest);
         }
         const room = arenaRooms.get(roomCode)!;
-        arenaSend(socket, { type: "joined", room: roomCode, seat, reconnectToken: room.reconnectTokens[seat]! });
-        broadcastArena(room, arenaSnapshot(room));
-        return;
+        arenaSend(socket, { type: "joined", room: roomCode, seat, reconnectToken: room.reconnectTokens[seat]!, region, tickRate, snapshotRate }); broadcastArena(room, arenaSnapshot(room)); return;
       }
-      if (arenaLeave.safeParse(message).success) {
-        if (!roomCode || !seat) return arenaSend(socket, { type: "error", message: "You are not in an arena room." });
-        explicitLeave = true;
-        discardArenaSeat(roomCode, arenaRooms.get(roomCode)!, seat);
-        socket.close();
-        return;
-      }
+      if (arenaLeave.safeParse(message).success) { if (!roomCode || !seat) return arenaSend(socket, { type: "error", message: "You are not in an arena room." }); explicitLeave = true; discardArenaSeat(roomCode, arenaRooms.get(roomCode)!, seat); socket.close(); return; }
       const room = roomCode ? arenaRooms.get(roomCode) : undefined;
-      if (!room || !seat || !room.started) return arenaSend(socket, { type: "error", message: "Join a room and wait for a rival." });
-      const state = arenaState.safeParse(message);
-      if (state.success) {
-          const { type: _type, ...position } = state.data;
-          const player = room.players[seat];
-          const now = Date.now();
-          if (now - lastStateAt < 45) return;
-          lastStateAt = now;
-          const elapsed = Math.min(1, Math.max(0, (now - player.lastPositionAt) / 1000));
-          const distance = Math.hypot((position.x - player.x) * 8, (position.z - player.z) * 12);
-          if (distance > 7.5 * elapsed + .5 || insideArenaWall(position.x * 8, 1 - position.z * 12)) return;
-          Object.assign(player, position, { lastPositionAt: now });
-          return;
-      }
+      if (!room || !seat) return arenaSend(socket, { type: "error", message: "Join a room first." });
+      const ping = arenaPing.safeParse(message);
+      if (ping.success) return arenaSend(socket, { type: "pong", sentAt: ping.data.sentAt, serverTick: arenaTick, serverLagMs: tickLagMs, pingWarningMs: pingWarnMs });
+      if (!room.started) return arenaSend(socket, { type: "error", message: "Wait for a rival." });
+      const input = arenaInput.safeParse(message);
+      if (input.success) { const player = room.players[seat]; if (input.data.sequence <= player.ack) return; player.input = { ...input.data, receivedAt: now }; player.ack = input.data.sequence; return; }
       const shot = arenaShot.safeParse(message);
       if (!shot.success) return arenaSend(socket, { type: "error", message: "Invalid arena message." });
-      const shooter = room.players[seat];
-      const targetSeat: ArenaSeat = seat === "host" ? "guest" : "host";
-      const target = room.players[targetSeat];
-      const now = Date.now();
+      const shooter = room.players[seat], targetSeat: ArenaSeat = seat === "host" ? "guest" : "host", target = rewindTarget(room, targetSeat, shot.data.shotTick);
       const cooldown = shot.data.loadout === "sidearm" ? 150 : 90;
-      if (now - shooter.lastShotAt < cooldown) return;
+      if (!target || now - shooter.lastShotAt < cooldown) return;
       if (Math.abs(shot.data.yaw - shooter.yaw) > .8 || Math.abs(shot.data.pitch - shooter.pitch) > .45) return arenaSend(socket, { type: "error", message: "Aim is out of sync. Keep moving before firing." });
       shooter.lastShotAt = now;
-      // Hit testing and damage use the server's last accepted positions, never client-reported hit claims.
-       const sx = shooter.x * 8, sz = 1 - shooter.z * 12;
-       const tx = target.x * 8, tz = 1 - target.z * 12;
-       const dx = tx - sx, dz = tz - sz;
-       const dirX = -Math.sin(shot.data.yaw) * Math.cos(shot.data.pitch);
-       const dirY = Math.sin(shot.data.pitch);
-       const dirZ = -Math.cos(shot.data.yaw) * Math.cos(shot.data.pitch);
-       const along = dx * dirX + (1.05 - 1.72) * dirY + dz * dirZ;
-       const distance = Math.hypot(dx - along * dirX, (1.05 - 1.72) - along * dirY, dz - along * dirZ);
-       const spread = shot.data.loadout === "sidearm" ? .3 : .44;
-        const hit = along > 0 && along < 32 && distance < spread && !wallBeforeTarget(sx, sz, dirX, dirZ, along);
-        if (hit) target.health = Math.max(0, target.health - (shot.data.loadout === "sidearm" ? 28 : 16));
-        broadcastArena(room, { type: "shot", seat, hit, health: target.health });
-        if (target.health === 0) {
-          shooter.kills++;
-          target.deaths++;
-          broadcastArena(room, { type: "elimination", killer: seat, victim: targetSeat, kills: shooter.kills, deaths: target.deaths });
-          // Keep a casual room playable after a confirmed elimination instead of forcing a reconnect.
-          const spawn = targetSeat === "host" ? newArenaPlayer(-.18, .6, 2.75, target) : newArenaPlayer(.18, 1.18, -.4, target);
-          room.players[targetSeat] = spawn;
-          broadcastArena(room, { type: "respawn", seat: targetSeat, player: publicArenaPlayer(spawn) });
-        }
+      const sx = shooter.x * 8, sz = 1 - shooter.z * 12, tx = target.x * 8, tz = 1 - target.z * 12;
+      const dirX = -Math.sin(shot.data.yaw) * Math.cos(shot.data.pitch), dirY = Math.sin(shot.data.pitch), dirZ = -Math.cos(shot.data.yaw) * Math.cos(shot.data.pitch);
+      const along = (tx - sx) * dirX + (1.05 - 1.72) * dirY + (tz - sz) * dirZ;
+      const distance = Math.hypot(tx - sx - along * dirX, (1.05 - 1.72) - along * dirY, tz - sz - along * dirZ);
+      const hit = along > 0 && along < 32 && distance < (shot.data.loadout === "sidearm" ? .3 : .44) && !wallBeforeTarget(sx, sz, dirX, dirZ, along);
+      const liveTarget = room.players[targetSeat];
+      if (hit) liveTarget.health = Math.max(0, liveTarget.health - (shot.data.loadout === "sidearm" ? 28 : 16));
+      broadcastArena(room, { type: "shot", seat, hit, health: liveTarget.health });
+      if (liveTarget.health === 0) { shooter.kills++; liveTarget.deaths++; broadcastArena(room, { type: "elimination", killer: seat, victim: targetSeat, kills: shooter.kills, deaths: liveTarget.deaths }); const spawn = targetSeat === "host" ? newArenaPlayer(-.18, .6, 2.75, liveTarget) : newArenaPlayer(.18, 1.18, -.4, liveTarget); room.players[targetSeat] = spawn; broadcastArena(room, { type: "respawn", seat: targetSeat, player: publicArenaPlayer(spawn) }); }
     } catch { arenaSend(socket, { type: "error", message: "Malformed arena message." }); }
   });
-  socket.on("close", () => {
-    const room = roomCode ? arenaRooms.get(roomCode) : undefined;
-    if (!room || !seat || explicitLeave) return;
-    if (room.clients[seat] !== socket) return;
-    delete room.clients[seat];
-    room.started = false;
-    const rival: ArenaSeat = seat === "host" ? "guest" : "host";
-    if (room.clients[rival]) broadcastArena(room, { type: "opponent-left", reconnecting: true });
-    // Hold only this seat briefly so a dropped browser can reclaim it without opening a third seat.
-    room.disconnectTimers[seat] = setTimeout(() => discardArenaSeat(roomCode!, room, seat!), 30_000);
-  });
+  socket.on("close", () => { const room = roomCode ? arenaRooms.get(roomCode) : undefined; if (!room || !seat || explicitLeave || room.clients[seat] !== socket) return; delete room.clients[seat]; room.started = false; const rival: ArenaSeat = seat === "host" ? "guest" : "host"; if (room.clients[rival]) broadcastArena(room, { type: "opponent-left", reconnecting: true }); room.disconnectTimers[seat] = setTimeout(() => discardArenaSeat(roomCode!, room, seat!), reconnectMs); });
 });
-setInterval(() => arenaRooms.forEach(room => { if (room.started) broadcastArena(room, arenaSnapshot(room)); }), 67).unref();
-server.listen(port, "0.0.0.0", () => console.log(`Authority service listening on ${port}`));
+
+function arenaStep() {
+  const startedAt = Date.now(); expectedTickAt += 1_000 / tickRate; tickLagMs = Math.max(0, startedAt - expectedTickAt); maxTickLagMs = Math.max(maxTickLagMs, tickLagMs); arenaTick++;
+  arenaRooms.forEach(room => { if (!room.started) return; simulateArenaPlayer(room.players.host, startedAt); simulateArenaPlayer(room.players.guest, startedAt); recordHistory(room); if (arenaTick % Math.max(1, Math.round(tickRate / snapshotRate)) === 0) broadcastArena(room, arenaSnapshot(room)); });
+  lastTickDurationMs = Date.now() - startedAt;
+}
+setInterval(arenaStep, 1_000 / tickRate).unref();
+app.get("/health", (_request, response) => response.json({ status: "ok", region, tickRate, snapshotRate, tick: arenaTick, tickLagMs, lastTickDurationMs, rooms: arenaRooms.size, players: [...arenaRooms.values()].reduce((count, room) => count + Number(Boolean(room.clients.host)) + Number(Boolean(room.clients.guest)), 0) }));
+app.get("/v1/status", (_request, response) => response.set("Cache-Control", "no-store").json({ status: "ok", region, tickRate, snapshotRate, maxRewindMs, pingWarnMs, tick: arenaTick, tickLagMs, maxTickLagMs, lastTickDurationMs, rooms: arenaRooms.size, players: [...arenaRooms.values()].reduce((count, room) => count + Number(Boolean(room.clients.host)) + Number(Boolean(room.clients.guest)), 0) }));
+server.listen(port, "0.0.0.0", () => console.log(`Authority service listening on ${port} (${region}, ${tickRate} Hz)`));
