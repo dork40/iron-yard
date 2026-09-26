@@ -1,4 +1,10 @@
 import * as THREE from "three";
+
+// Positions just behind the yard's crates and central divider, used by local AI.
+export const ironYardCoverPoints = [
+  [-12, -6], [-6, -9], [5, 4], [11, 4], [0, -5], [0, 5], [-9, 10], [-5, 10], [10, -15], [10, -7],
+].map(([x, z]) => new THREE.Vector3(x, 0, z));
+
 export function buildIronYard(scene: THREE.Scene) {
   const colliders: THREE.Box3[] = []; const concrete = new THREE.MeshStandardMaterial({ color: "#69716d", roughness: .82, metalness: .08 }); const rust = new THREE.MeshStandardMaterial({ color: "#6b4130", roughness: .68, metalness: .35 });
   const box = (x:number,y:number,z:number,w:number,h:number,d:number, material=concrete) => { const mesh = new THREE.Mesh(new THREE.BoxGeometry(w,h,d), material); mesh.position.set(x,y,z); mesh.castShadow = mesh.receiveShadow = true; scene.add(mesh); colliders.push(new THREE.Box3().setFromObject(mesh)); };

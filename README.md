@@ -1,6 +1,10 @@
 # High Noon Showdown
 
-High Noon Showdown v3.5.2 is an original Wild West browser game with local player progression, synthesized Web Audio effects, an AI-only Ghost Challenge personal-best race, casual multiplayer, and Iron Yard: a normal desktop browser FPS vertical slice. It contains no borrowed characters, art, sounds, maps, dialogue, or branding.
+High Noon Showdown v3.5.4 is an original Wild West browser game with local player progression, synthesized Web Audio effects, an AI-only Ghost Challenge personal-best race, casual multiplayer, and Iron Yard: a normal desktop browser FPS vertical slice. It contains no borrowed characters, art, sounds, maps, dialogue, or branding.
+
+## v3.5.4 Iron Yard Tactical Bot AI
+
+The normal training bot now uses collider-aware line of sight, pursuit and cover points, range-aware strafing, deterministic reaction and reload pauses, and difficulty-scaled aim and fire cadence. Bot shots cannot pass through walls.
 
 ## v3.5.2 Immediate Training
 

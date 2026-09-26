@@ -98,6 +98,8 @@ const arenaRoomCode = () => crypto.randomBytes(3).toString("hex").toUpperCase();
 const arenaJoin = z.discriminatedUnion("type", [z.object({ type: z.literal("create") }), z.object({ type: z.literal("join"), room: z.string().regex(/^[A-Z0-9]{6}$/) })]);
 const arenaState = z.object({ type: z.literal("state"), x: z.number().finite().min(-1.89).max(1.89), z: z.number().finite().min(-1).max(2), yaw: z.number().finite().min(-100).max(100), pitch: z.number().finite().min(-1.3).max(1.3) });
 const arenaShot = z.object({ type: z.literal("shot"), loadout: z.enum(["sidearm", "carbine"]), yaw: z.number().finite().min(-100).max(100), pitch: z.number().finite().min(-1.3).max(1.3) });
+const arenaWalls = [[-22.5, 22.5, -22.5, -21.5], [-22.5, 22.5, 21.5, 22.5], [-22.5, -21.5, -22.5, 22.5], [21.5, 22.5, -22.5, 22.5], [-11.5, -6.5, -7.5, -4.5], [5.5, 10.5, 2.5, 5.5], [-1.5, 1.5, -3.5, 3.5], [-8.5, -5.5, 8.5, 11.5], [8.5, 11.5, -12.5, -9.5]] as const;
+function wallBeforeTarget(x: number, z: number, directionX: number, directionZ: number, targetDistance: number) { let nearest = Infinity; for (const [minX, maxX, minZ, maxZ] of arenaWalls) { let near = -Infinity, far = Infinity; for (const [origin, direction, min, max] of [[x, directionX, minX, maxX], [z, directionZ, minZ, maxZ]] as const) { if (Math.abs(direction) < .000001) { if (origin < min || origin > max) { near = Infinity; break; } continue; } const first = (min - origin) / direction, second = (max - origin) / direction; near = Math.max(near, Math.min(first, second)); far = Math.min(far, Math.max(first, second)); } if (near <= far && far >= 0) nearest = Math.min(nearest, Math.max(0, near)); } return nearest < targetDistance; }
 function arenaSend(socket: WebSocket, payload: object) { if (socket.readyState === socket.OPEN) socket.send(JSON.stringify(payload)); }
 function arenaSnapshot(room: ArenaRoom) { return { type: "state", started: room.started, players: { host: room.players.host, guest: room.players.guest } }; }
 function broadcastArena(room: ArenaRoom, payload: object) { Object.values(room.clients).forEach(socket => socket && arenaSend(socket, payload)); }
@@ -162,7 +164,7 @@ arenaWss.on("connection", (socket, request) => {
        const along = dx * dirX + (1.05 - 1.72) * dirY + dz * dirZ;
        const distance = Math.hypot(dx - along * dirX, (1.05 - 1.72) - along * dirY, dz - along * dirZ);
        const spread = shot.data.loadout === "sidearm" ? .3 : .44;
-       const hit = along > 0 && along < 32 && distance < spread;
+        const hit = along > 0 && along < 32 && distance < spread && !wallBeforeTarget(sx, sz, dirX, dirZ, along);
        if (hit) target.health = Math.max(0, target.health - (shot.data.loadout === "sidearm" ? 28 : 16));
        broadcastArena(room, { type: "shot", seat, hit, health: target.health });
        if (target.health === 0) {
