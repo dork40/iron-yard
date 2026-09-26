@@ -1,8 +1,8 @@
 # High Noon Showdown
 
-High Noon Showdown v4.2.0 is an original Wild West browser game with local player progression, synthesized Web Audio effects, an AI-only Ghost Challenge personal-best race, casual multiplayer, and Iron Yard: a normal desktop browser FPS vertical slice. Iron Yard uses locally bundled CC0 Kenney character assets; its maps, weapons, sounds, dialogue, and branding remain original.
+High Noon Showdown v4.2.2 is an original Wild West browser game with local player progression, synthesized Web Audio effects, an AI-only Ghost Challenge personal-best race, casual multiplayer, and Iron Yard: a normal desktop browser FPS vertical slice. Iron Yard uses locally bundled CC0 Kenney character assets; its maps, weapons, sounds, dialogue, and branding remain original.
 
-## v4.2.0 Iron Yard Input And Fullscreen Fixes
+## v4.2.2 Iron Yard Bot Fire Feedback
 
 Iron Yard fullscreen now targets only the self-contained 16:9 arena frame, so the page outside the canvas, combat HUD, action bar, and in-frame panels never becomes the fullscreen surface. Reloads only start when the active pointer-locked player has missing magazine ammo and reserve ammo; clear HUD messages cover reloading, full magazines, and empty reserve. Equipping a weapon cancels its pending reload, preventing an old completion from changing the new weapon. Mouse fire is released on browser blur or pointer-lock loss; pistols remain one shot per primary press and automatic weapons fire only while the primary button remains held under pointer lock.
 
