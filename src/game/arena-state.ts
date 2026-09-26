@@ -14,7 +14,7 @@ export class TacticalRound {
   endsAt = 0;
 
   start(now: number) { this.phase = "buy"; this.eliminations = 0; this.deaths = 0; this.endsAt = now + 30_000; }
-  tick(now: number) {
+  tick(now: number): ArenaPhase | undefined {
     if (this.phase === "buy" && now >= this.endsAt) { this.phase = "live"; this.endsAt = now + 90_000; return this.phase; }
     if (this.phase === "live" && (now >= this.endsAt || this.eliminations >= 8)) { this.phase = "round-end"; this.endsAt = now + 7_000; return this.phase; }
     if (this.phase === "round-end" && now >= this.endsAt) { this.start(now); return this.phase; }
