@@ -1,4 +1,4 @@
-﻿export type SoundName = "click" | "signal" | "shot" | "negative" | "bottle" | "win" | "loss";
+export type SoundName = "click" | "signal" | "shot" | "negative" | "bottle" | "win" | "loss";
 
 let muted = false;
 let context: AudioContext | undefined;
@@ -22,4 +22,3 @@ export function playSound(name: SoundName) {
     oscillator.connect(volume).connect(context.destination); oscillator.start(now); oscillator.stop(now + duration);
   } catch { /* Audio is an enhancement and must never interrupt play. */ }
 }
-

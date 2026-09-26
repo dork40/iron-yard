@@ -1,4 +1,4 @@
-﻿export type TrailPoint = { x: number; y: number };
+export type TrailPoint = { x: number; y: number };
 
 function seededRandom(seed: number) {
   let value = seed >>> 0;
@@ -53,4 +53,3 @@ export function aiTrailScore(difficulty: "easy" | "normal" | "hard") {
   const [minimum, maximum] = ranges[difficulty];
   return Math.round(minimum + Math.random() * (maximum - minimum));
 }
-

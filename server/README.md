@@ -1,4 +1,4 @@
-﻿# High Noon Authority Service
+# High Noon Authority Service
 
 This is a deployable TURN credential issuer and authority-round foundation. It also hosts the live Iron Yard 1v1 arena WebSocket. Arena rooms are in memory and browser sockets are origin-checked but not identity-authenticated, so it needs durable storage, identity verification, abuse controls, and observability before competitive/ranked use.
 
@@ -27,4 +27,3 @@ The game reads the ephemeral ticket from `sessionStorage["high-noon-turn-ticket"
 `/v1/arena` accepts browser WebSockets only from `ALLOWED_ORIGINS` when that variable is set. The client sends `{ "type": "create" }` to receive a six-character room code, or `{ "type": "join", "room": "ABC123" }` to take its only guest seat. A third client is rejected.
 
 Clients send bounded `{ "type": "state", "x", "z", "yaw", "pitch" }` updates at approximately 15 Hz and `{ "type": "shot", "loadout", "yaw", "pitch" }`. Zod validates every message. The server owns accepted player positions, fire-rate limits, aim-ray hit testing, damage, health, win/loss, and disconnect broadcasts. Room state is intentionally volatile: a deployment restart ends active matches. The browser uses Three.js/WebGL and generates the brick, concrete, and floor textures locally.
-

@@ -1,4 +1,4 @@
-﻿import crypto from "node:crypto";
+import crypto from "node:crypto";
 import http from "node:http";
 import cors from "cors";
 import express from "express";
@@ -179,4 +179,3 @@ arenaWss.on("connection", (socket, request) => {
 });
 setInterval(() => arenaRooms.forEach(room => { if (room.started) broadcastArena(room, arenaSnapshot(room)); }), 67).unref();
 server.listen(port, "0.0.0.0", () => console.log(`Authority service listening on ${port}`));
-
