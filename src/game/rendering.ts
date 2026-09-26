@@ -49,14 +49,14 @@ export function arenaMaterial(kind: "concrete" | "rust") {
 
 export function weaponMaterial(kind: "steel" | "wood" | "polymer") {
   if (kind === "steel") {
-    const map = texture("/textures/gun-metal-albedo.png", true); map.repeat.set(1.4, 1.4);
-    return new THREE.MeshStandardMaterial({ map, metalness: .88, roughness: .26 });
+    const map = texture("/textures/gun-metal-albedo.png", true); map.repeat.set(2.6, 1.35); map.offset.set(.12, .08);
+    return new THREE.MeshStandardMaterial({ map, color: "#d1dddd", metalness: .42, roughness: .38 });
   }
   if (kind === "wood") {
-    const map = texture("/textures/gun-wood-albedo.jpg", true); map.repeat.set(1.6, 1.6);
-    return new THREE.MeshStandardMaterial({ map, metalness: .03, roughness: .58 });
+    const map = texture("/textures/gun-wood-albedo.jpg", true); map.repeat.set(2.2, 1.15); map.offset.set(.05, .18);
+    return new THREE.MeshStandardMaterial({ map, color: "#d8b08a", metalness: .02, roughness: .5 });
   }
-  const map = texture("/textures/gun-metal-albedo.png", true); map.repeat.set(1.1, 1.1);
+  const map = texture("/textures/gun-metal-albedo.png", true); map.repeat.set(2, 1.2); map.offset.set(.18, .04);
   return new THREE.MeshStandardMaterial({ map, color: "#53636a", metalness: .28, roughness: .52 });
 }
 
@@ -77,7 +77,13 @@ export function createWeapon(camera: THREE.Camera, id: WeaponId) {
   } else if (id === "modern-rifle") {
     add(new THREE.BoxGeometry(.17, .15, .58), polymer, .3, -.27, -.68, 0, true); add(new THREE.CylinderGeometry(.028, .036, .78, 10), steel, .3, -.23, -1.28, Math.PI / 2, true); add(new THREE.BoxGeometry(.11, .25, .15), polymer, .3, -.43, -.5, -.24); const mesh = add(new THREE.BoxGeometry(.1, .32, .14), polymer, .3, -.45, -.75, -.05); magazine = { object: mesh, position: mesh.position.clone(), rotation: mesh.rotation.clone() }; add(new THREE.BoxGeometry(.08, .05, .22), steel, .3, -.1, -.9);
   } else {
-    add(new THREE.BoxGeometry(.16, .15, .38), steel, .3, -.3, -.6, 0, true); add(new THREE.CylinderGeometry(.035, .04, .31, 10), steel, .3, -.27, -.89, Math.PI / 2, true); add(new THREE.BoxGeometry(.11, .25, .14), wood, .3, -.45, -.51, -.22); const mesh = add(new THREE.BoxGeometry(.09, .2, .12), steel, .3, -.42, -.59); magazine = { object: mesh, position: mesh.position.clone(), rotation: mesh.rotation.clone() };
+    // Larger separate parts keep the existing local albedo maps legible in the first-person view.
+    add(new THREE.BoxGeometry(.2, .17, .42), steel, .3, -.29, -.65, 0, true);
+    add(new THREE.BoxGeometry(.17, .11, .25), steel, .3, -.36, -.89, 0, true);
+    add(new THREE.CylinderGeometry(.038, .046, .38, 12), steel, .3, -.27, -1.02, Math.PI / 2, true);
+    add(new THREE.BoxGeometry(.145, .32, .18), wood, .3, -.48, -.52, -.24);
+    add(new THREE.BoxGeometry(.15, .035, .2), wood, .3, -.59, -.52, -.24);
+    const mesh = add(new THREE.BoxGeometry(.1, .22, .14), steel, .3, -.42, -.6); magazine = { object: mesh, position: mesh.position.clone(), rotation: mesh.rotation.clone() };
   }
   group.userData.weaponView = { slide, magazine, lastShot: -Infinity }; camera.add(group); return group;
 }
@@ -117,10 +123,28 @@ export function createFighter(color = "#4e6670", variant: FighterVariant = "char
   loadFighterAsset(variant).then(gltf => {
     const model = cloneSkeleton(gltf.scene); const bounds = new THREE.Box3().setFromObject(model), height = Math.max(.001, bounds.max.y - bounds.min.y), scale = 1.72 / height;
     model.scale.setScalar(scale); model.position.y = -bounds.min.y * scale;
-    model.traverse(item => { if (item instanceof THREE.Mesh) { item.castShadow = true; item.receiveShadow = true; } });
+    let meshes = 0, texturedMeshes = 0, fallbackMaterials = 0;
+    model.traverse(item => {
+      if (!(item instanceof THREE.Mesh)) return;
+      meshes++; item.castShadow = true; item.receiveShadow = true;
+      const materials = Array.isArray(item.material) ? item.material : [item.material];
+      item.material = materials.map(source => {
+        const material = source.clone() as THREE.Material & { map?: THREE.Texture; vertexColors?: boolean };
+        const hasMap = Boolean(material.map?.source.data);
+        if (material.map) { material.map.colorSpace = THREE.SRGBColorSpace; if (hasMap) texturedMeshes++; }
+        if (material.vertexColors && !item.geometry.getAttribute("color")) material.vertexColors = false;
+        if (material instanceof THREE.MeshStandardMaterial) {
+          if (!hasMap) { material.color.set("#b9a992"); fallbackMaterials++; }
+          material.emissive.setRGB(.025, .025, .025);
+        }
+        material.needsUpdate = true;
+        return material;
+      }) as THREE.Material | THREE.Material[];
+    });
     state.motion.remove(state.fallback); state.motion.add(model);
+    console.info("[Iron Yard] Textured character loaded", { variant, meshes, texturedMeshes, fallbackMaterials });
     if (gltf.animations.length) { state.mixer = new THREE.AnimationMixer(model); state.mixer.clipAction(gltf.animations[0]).play(); state.hasClip = true; }
-  }).catch(() => { /* Keep the low-poly fallback when a local asset cannot be loaded. */ });
+  }).catch(error => { console.warn("[Iron Yard] Character GLB failed; retaining fallback", { variant, error }); });
   return group;
 }
 

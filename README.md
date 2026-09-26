@@ -1,8 +1,12 @@
 # High Noon Showdown
 
-High Noon Showdown v3.9.0 is an original Wild West browser game with local player progression, synthesized Web Audio effects, an AI-only Ghost Challenge personal-best race, casual multiplayer, and Iron Yard: a normal desktop browser FPS vertical slice. Iron Yard uses locally bundled CC0 Kenney character assets; its maps, weapons, sounds, dialogue, and branding remain original.
+High Noon Showdown v3.9.1 is an original Wild West browser game with local player progression, synthesized Web Audio effects, an AI-only Ghost Challenge personal-best race, casual multiplayer, and Iron Yard: a normal desktop browser FPS vertical slice. Iron Yard uses locally bundled CC0 Kenney character assets; its maps, weapons, sounds, dialogue, and branding remain original.
 
-## v3.9.0 Textured Fighter And Weapon Motion
+## v3.9.1 Iron Yard Visibility And Fullscreen
+
+Iron Yard now has an in-frame **IRON YARD FULLSCREEN** action (`F`) that fullscreen-targets only the arena shell and keeps the canvas and combat HUD usable. The original first-person weapon meshes retain the existing local wood and metal albedo maps with clearer UV placement; the Ranger Pistol now has visibly separate textured wood-grip and metal-receiver geometry. Imported Kenney GLB materials are diagnosed in the console on swap, normalize base-color maps to sRGB, and avoid black rendering when vertex colors or a texture are unavailable.
+
+## Previous: Textured Fighter And Weapon Motion
 
 Iron Yard bots and the online rival now begin as dependable low-poly placeholders, then asynchronously swap to locally hosted Kenney Blocky Characters 2.0 GLB variants with their embedded/supplied materials, texture maps, and mesh shadows. Included GLB clips play when present; models without clips use a procedural walk bob, turn, and firing pose. The original first-person weapon meshes retain their local wood/metal textures and now animate muzzle kick, slide movement, reload magazine motion, and movement sway. See [`ASSETS.md`](ASSETS.md) and the bundled `public/characters/License.txt` for CC0 attribution.
 
