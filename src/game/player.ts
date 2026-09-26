@@ -12,7 +12,7 @@ export class FpsPlayer {
     const speed = this.crouched ? 3 : this.sprinting ? 7.2 : 5; const accel = this.grounded ? 35 : 10;
     this.velocity.x += (direction.x * speed - this.velocity.x) * Math.min(1, accel * dt); this.velocity.z += (direction.z * speed - this.velocity.z) * Math.min(1, accel * dt);
     if (input.keys.has(input.bindings.jump) && this.grounded) { this.velocity.y = 6.2; this.grounded = false; }
-    this.velocity.y -= 18 * dt; const next = this.camera.position.clone().addScaledVector(this.velocity, dt); const feet = this.crouched ? .95 : 1.7;
+    this.velocity.y -= 18 * dt; const next = this.camera.position.clone().addScaledVector(this.velocity, dt); const feet = 1.7;
     if (next.y <= feet) { next.y = feet; this.velocity.y = 0; this.grounded = true; }
     // Sweep short steps to prevent a delayed frame from tunneling through thin cover.
     const start = this.camera.position.clone(), steps = Math.max(1, Math.ceil(start.distanceTo(next) / .12));

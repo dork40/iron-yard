@@ -76,6 +76,10 @@ export function createWeapon(camera: THREE.Camera, id: WeaponId) {
     const mesh = add(new THREE.BoxGeometry(.13, .37, .18), steel, .3, -.48, -.72, -.35); magazine = { object: mesh, position: mesh.position.clone(), rotation: mesh.rotation.clone() };
   } else if (id === "modern-rifle") {
     add(new THREE.BoxGeometry(.17, .15, .58), polymer, .3, -.27, -.68, 0, true); add(new THREE.CylinderGeometry(.028, .036, .78, 10), steel, .3, -.23, -1.28, Math.PI / 2, true); add(new THREE.BoxGeometry(.11, .25, .15), polymer, .3, -.43, -.5, -.24); const mesh = add(new THREE.BoxGeometry(.1, .32, .14), polymer, .3, -.45, -.75, -.05); magazine = { object: mesh, position: mesh.position.clone(), rotation: mesh.rotation.clone() }; add(new THREE.BoxGeometry(.08, .05, .22), steel, .3, -.1, -.9);
+  } else if (id === "smg") {
+    add(new THREE.BoxGeometry(.2, .16, .5), polymer, .3, -.29, -.7, 0, true); add(new THREE.CylinderGeometry(.03, .038, .48, 10), steel, .3, -.25, -1.1, Math.PI / 2, true); const mesh = add(new THREE.BoxGeometry(.11, .34, .14), polymer, .3, -.47, -.55); magazine = { object: mesh, position: mesh.position.clone(), rotation: mesh.rotation.clone() }; add(new THREE.BoxGeometry(.13, .12, .36), polymer, .3, -.4, -.46, -.18);
+  } else if (id === "sniper-rifle") {
+    add(new THREE.BoxGeometry(.16, .13, .72), steel, .3, -.26, -.78, 0, true); add(new THREE.CylinderGeometry(.026, .035, 1.15, 10), steel, .3, -.21, -1.5, Math.PI / 2, true); add(new THREE.CylinderGeometry(.075, .075, .32, 12), polymer, .3, -.08, -1.02, Math.PI / 2); add(new THREE.BoxGeometry(.13, .16, .55), wood, .3, -.36, -.42, -.42); const mesh = add(new THREE.BoxGeometry(.09, .25, .13), steel, .3, -.42, -.62); magazine = { object: mesh, position: mesh.position.clone(), rotation: mesh.rotation.clone() };
   } else {
     // Larger separate parts keep the existing local albedo maps legible in the first-person view.
     add(new THREE.BoxGeometry(.2, .17, .42), steel, .3, -.29, -.65, 0, true);

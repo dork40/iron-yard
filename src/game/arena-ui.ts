@@ -2,7 +2,7 @@ import type { ArenaConfig, ArenaPhase } from "./arena-state";
 import { arenaMapIds, arenaMaps } from "./maps";
 import { weapons, type WeaponId } from "./weapons";
 
-const weaponIds: WeaponId[] = ["frontier-rifle", "modern-rifle", "pistol"];
+const weaponIds: WeaponId[] = ["frontier-rifle", "modern-rifle", "smg", "sniper-rifle", "pistol"];
 
 function weaponButton(id: WeaponId, action: "buy" | "equip") {
   const weapon = weapons[id];

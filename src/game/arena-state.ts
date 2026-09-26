@@ -19,14 +19,13 @@ export class TacticalRound {
     if (this.phase === "live" && (now >= this.endsAt || this.eliminations >= 8)) { this.phase = "round-end"; this.endsAt = now + 7_000; return this.phase; }
     if (this.phase === "round-end" && now >= this.endsAt) { this.start(now); return this.phase; }
   }
-  canBuy(inBuyZone: boolean) { return this.phase === "buy" && inBuyZone; }
-  buy(id: WeaponId, price: number, owned: Set<WeaponId>, inBuyZone: boolean) {
-    if (!this.canBuy(inBuyZone)) return "BUYING IS OPEN ONLY IN THE START ZONE.";
+  canBuy(_inBuyZone: boolean) { return true; }
+  buy(id: WeaponId, price: number, owned: Set<WeaponId>, _inBuyZone: boolean) {
     if (owned.has(id)) return "ALREADY OWNED.";
     if (price > this.cash) return `NEED $${price - this.cash} MORE.`;
     this.cash -= price; owned.add(id); return "";
   }
-  elimination() { this.eliminations++; this.cash += 300; }
+  elimination() { this.eliminations++; this.cash += 1_000; }
   death() { this.deaths++; this.cash = Math.max(0, this.cash - 300); }
   label(now: number) {
     const seconds = Math.max(0, Math.ceil((this.endsAt - now) / 1000));

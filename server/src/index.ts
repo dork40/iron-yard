@@ -95,8 +95,9 @@ wss.on("connection", socket => {
 
 type ArenaSeat = "host" | "guest";
 type ArenaMapId = "iron-yard" | "freight-terminal" | "foundry";
+type ArenaWeapon = "frontier-rifle" | "modern-rifle" | "smg" | "sniper-rifle" | "pistol";
 type ArenaInput = { sequence: number; moveX: number; moveZ: number; sprint: boolean; crouch: boolean; jump: boolean; yaw: number; pitch: number; receivedAt: number };
-type ArenaPlayer = { x: number; y: number; z: number; velocityY: number; yaw: number; pitch: number; health: number; kills: number; deaths: number; lastShotAt: number; input: ArenaInput; ack: number };
+type ArenaPlayer = { x: number; y: number; z: number; velocityY: number; yaw: number; pitch: number; health: number; kills: number; deaths: number; cash: number; owned: Set<ArenaWeapon>; weapon: ArenaWeapon; lastShotAt: number; input: ArenaInput; ack: number };
 type ArenaHistory = { tick: number; players: Record<ArenaSeat, Pick<ArenaPlayer, "x" | "y" | "z" | "yaw" | "pitch">> };
 type ArenaRoom = { map: ArenaMapId; clients: Partial<Record<ArenaSeat, WebSocket>>; reconnectTokens: Partial<Record<ArenaSeat, string>>; disconnectTimers: Partial<Record<ArenaSeat, NodeJS.Timeout>>; players: Record<ArenaSeat, ArenaPlayer>; history: ArenaHistory[]; started: boolean };
 type ArenaQueueEntry = { socket: WebSocket; map: ArenaMapId | "any" };
@@ -110,8 +111,11 @@ const arenaQueueMessage = z.object({ type: z.literal("queue"), map: z.union([are
 const arenaCancelQueue = z.object({ type: z.literal("cancel-queue") }).strict();
 const arenaLeave = z.object({ type: z.literal("leave") }).strict();
 const arenaInput = z.object({ type: z.literal("input"), sequence: z.number().int().min(1).max(2_147_483_647), moveX: z.number().finite().min(-1).max(1), moveZ: z.number().finite().min(-1).max(1), sprint: z.boolean(), crouch: z.boolean(), jump: z.boolean(), yaw: z.number().finite().min(-100).max(100), pitch: z.number().finite().min(-1.3).max(1.3) }).strict();
-const arenaShot = z.object({ type: z.literal("shot"), loadout: z.enum(["sidearm", "carbine"]), yaw: z.number().finite().min(-100).max(100), pitch: z.number().finite().min(-1.3).max(1.3), shotTick: z.number().int().min(0).max(2_147_483_647) }).strict();
+const arenaShot = z.object({ type: z.literal("shot"), weapon: z.enum(["frontier-rifle", "modern-rifle", "smg", "sniper-rifle", "pistol"]), yaw: z.number().finite().min(-100).max(100), pitch: z.number().finite().min(-1.3).max(1.3), shotTick: z.number().int().min(0).max(2_147_483_647) }).strict();
+const arenaPurchase = z.object({ type: z.literal("purchase"), weapon: z.enum(["frontier-rifle", "modern-rifle", "smg", "sniper-rifle", "pistol"]) }).strict();
 const arenaPing = z.object({ type: z.literal("ping"), sentAt: z.number().finite().min(0).max(1e12) }).strict();
+const arenaWeapons: Record<ArenaWeapon, { damage: number; cooldown: number }> = { "frontier-rifle": { damage: 25, cooldown: 108 }, "modern-rifle": { damage: 25, cooldown: 82 }, smg: { damage: 20, cooldown: 68 }, "sniper-rifle": { damage: 100, cooldown: 1_100 }, pistol: { damage: 17, cooldown: 260 } };
+const arenaWeaponPrices: Record<ArenaWeapon, number> = { "frontier-rifle": 1_800, "modern-rifle": 2_400, smg: 2_100, "sniper-rifle": 4_200, pistol: 0 };
 const arenaLayouts: Record<ArenaMapId, { bounds: [number, number, number, number]; walls: readonly (readonly [number, number, number, number])[]; spawns: readonly [number, number, number][] }> = {
   "iron-yard": { bounds: [-25.5, 25.5, -25.5, 25.5], walls: [[-25.5, 25.5, -25.5, -24.5], [-25.5, 25.5, 24.5, 25.5], [-25.5, -24.5, -25.5, 25.5], [24.5, 25.5, -25.5, 25.5], [-1.7, 1.7, -7.5, 7.5], [-14.5, -7.5, -9.7, -6.3], [6.5, 13.5, 5.3, 8.7], [-11.7, -8.3, 9, 13], [10.3, 13.7, -14, -10]], spawns: [[-16, 11, 2.75], [16, -11, -.4]] },
   "freight-terminal": { bounds: [-33.5, 33.5, -19.5, 19.5], walls: [[-33.5, 33.5, -19.5, -18.5], [-33.5, 33.5, 18.5, 19.5], [-33.5, -32.5, -19.5, 19.5], [32.5, 33.5, -19.5, 19.5], [-26, -16, -11.75, -8.25], [-26, -16, 6.25, 9.75], [-11, -1, 8.25, 11.75], [2, 12, -10.75, -7.25], [16, 26, 7.25, 10.75], [19, 29, -9.75, -6.25], [-29.6, -28.4, -2.75, 2.75], [-12.6, -11.4, -2.75, 2.75], [2.4, 3.6, -2.75, 2.75], [17.4, 18.6, -2.75, 2.75], [29.4, 30.6, -2.75, 2.75]], spawns: [[-28, 12, 2.5], [29, -13, -.6]] },
@@ -120,10 +124,10 @@ const arenaLayouts: Record<ArenaMapId, { bounds: [number, number, number, number
 function insideArenaWall(map: ArenaMapId, x: number, z: number) { return arenaLayouts[map].walls.some(([minX, maxX, minZ, maxZ]) => x > minX - .45 && x < maxX + .45 && z > minZ - .45 && z < maxZ + .45); }
 function wallBeforeTarget(map: ArenaMapId, x: number, z: number, directionX: number, directionZ: number, targetDistance: number) { let nearest = Infinity; for (const [minX, maxX, minZ, maxZ] of arenaLayouts[map].walls) { let near = -Infinity, far = Infinity; for (const [origin, direction, min, max] of [[x, directionX, minX, maxX], [z, directionZ, minZ, maxZ]] as const) { if (Math.abs(direction) < .000001) { if (origin < min || origin > max) { near = Infinity; break; } continue; } const first = (min - origin) / direction, second = (max - origin) / direction; near = Math.max(near, Math.min(first, second)); far = Math.min(far, Math.max(first, second)); } if (near <= far && far >= 0) nearest = Math.min(nearest, Math.max(0, near)); } return nearest < targetDistance; }
 function arenaSend(socket: WebSocket, payload: object) { if (socket.readyState === socket.OPEN) socket.send(JSON.stringify(payload)); }
-function publicArenaPlayer(player: ArenaPlayer) { return { x: player.x, y: player.y, z: player.z, yaw: player.yaw, pitch: player.pitch, health: player.health, kills: player.kills, deaths: player.deaths }; }
+function publicArenaPlayer(player: ArenaPlayer) { return { x: player.x, y: player.y, z: player.z, yaw: player.yaw, pitch: player.pitch, health: player.health, kills: player.kills, deaths: player.deaths, cash: player.cash, owned: [...player.owned], weapon: player.weapon }; }
 function arenaSnapshot(room: ArenaRoom) { return { type: "state", map: room.map, started: room.started, serverTick: arenaTick, serverTime: Date.now(), ack: { host: room.players.host.ack, guest: room.players.guest.ack }, players: { host: publicArenaPlayer(room.players.host), guest: publicArenaPlayer(room.players.guest) } }; }
 function broadcastArena(room: ArenaRoom, payload: object) { Object.values(room.clients).forEach(socket => socket && arenaSend(socket, payload)); }
-function newArenaPlayer(x: number, z: number, yaw: number, score?: Pick<ArenaPlayer, "kills" | "deaths">): ArenaPlayer { return { x, y: 0, z, velocityY: 0, yaw, pitch: 0, health: 100, kills: score?.kills ?? 0, deaths: score?.deaths ?? 0, lastShotAt: 0, input: { sequence: 0, moveX: 0, moveZ: 0, sprint: false, crouch: false, jump: false, yaw, pitch: 0, receivedAt: Date.now() }, ack: 0 }; }
+function newArenaPlayer(x: number, z: number, yaw: number, score?: Pick<ArenaPlayer, "kills" | "deaths" | "cash" | "weapon"> & { owned?: Set<ArenaWeapon> }): ArenaPlayer { return { x, y: 0, z, velocityY: 0, yaw, pitch: 0, health: 100, kills: score?.kills ?? 0, deaths: score?.deaths ?? 0, cash: score?.cash ?? 3_200, owned: new Set(score?.owned ?? ["pistol"]), weapon: score?.weapon ?? "pistol", lastShotAt: 0, input: { sequence: 0, moveX: 0, moveZ: 0, sprint: false, crouch: false, jump: false, yaw, pitch: 0, receivedAt: Date.now() }, ack: 0 }; }
 function newArenaRoom(map: ArenaMapId, host: WebSocket, guest?: WebSocket) { let roomCode: string; do { roomCode = arenaRoomCode(); } while (arenaRooms.has(roomCode)); const [hostX, hostZ, hostYaw] = arenaLayouts[map].spawns[0], [guestX, guestZ, guestYaw] = arenaLayouts[map].spawns[1]; const room: ArenaRoom = { map, clients: { host, ...(guest ? { guest } : {}) }, reconnectTokens: { host: crypto.randomBytes(24).toString("hex"), ...(guest ? { guest: crypto.randomBytes(24).toString("hex") } : {}) }, disconnectTimers: {}, players: { host: newArenaPlayer(hostX / 8, (1 - hostZ) / 12, hostYaw), guest: newArenaPlayer(guestX / 8, (1 - guestZ) / 12, guestYaw) }, history: [], started: Boolean(guest) }; arenaRooms.set(roomCode, room); return { roomCode, room }; }
 function removeArenaQueue(socket: WebSocket) { const index = arenaQueue.findIndex(entry => entry.socket === socket); if (index >= 0) arenaQueue.splice(index, 1); return index >= 0; }
 function queueMap(first: ArenaMapId | "any", second: ArenaMapId | "any"): ArenaMapId | undefined { if (first === "any" && second === "any") return arenaTick % 3 === 0 ? "iron-yard" : arenaTick % 3 === 1 ? "freight-terminal" : "foundry"; if (first === "any") return second === "any" ? undefined : second; if (second === "any" || first === second) return first; return undefined; }
@@ -190,13 +194,20 @@ arenaWss.on("connection", (socket, request) => {
       if (!room || !seat) return arenaSend(socket, { type: "error", message: "Join a room first." });
       const ping = arenaPing.safeParse(message);
       if (ping.success) return arenaSend(socket, { type: "pong", sentAt: ping.data.sentAt, serverTick: arenaTick, serverLagMs: tickLagMs, pingWarningMs: pingWarnMs });
+      const purchase = arenaPurchase.safeParse(message);
+      if (purchase.success) {
+        const player = room.players[seat], price = arenaWeaponPrices[purchase.data.weapon];
+        if (!player.owned.has(purchase.data.weapon)) { if (player.cash < price) return arenaSend(socket, { type: "error", message: `Need $${price - player.cash} more.` }); player.cash -= price; player.owned.add(purchase.data.weapon); }
+        player.weapon = purchase.data.weapon; arenaSend(socket, { type: "purchase", weapon: player.weapon, cash: player.cash }); broadcastArena(room, arenaSnapshot(room)); return;
+      }
       if (!room.started) return arenaSend(socket, { type: "error", message: "Wait for a rival." });
       const input = arenaInput.safeParse(message);
       if (input.success) { const player = room.players[seat]; if (input.data.sequence <= player.ack) return; player.input = { ...input.data, receivedAt: now }; player.ack = input.data.sequence; return; }
       const shot = arenaShot.safeParse(message);
       if (!shot.success) return arenaSend(socket, { type: "error", message: "Invalid arena message." });
       const shooter = room.players[seat], targetSeat: ArenaSeat = seat === "host" ? "guest" : "host", target = rewindTarget(room, targetSeat, shot.data.shotTick);
-      const cooldown = shot.data.loadout === "sidearm" ? 150 : 90;
+      const weapon = arenaWeapons[shooter.weapon];
+      const cooldown = weapon.cooldown;
       if (!target || now - shooter.lastShotAt < cooldown) return;
       if (Math.abs(shot.data.yaw - shooter.yaw) > .8 || Math.abs(shot.data.pitch - shooter.pitch) > .45) return arenaSend(socket, { type: "error", message: "Aim is out of sync. Keep moving before firing." });
       shooter.lastShotAt = now;
@@ -204,11 +215,11 @@ arenaWss.on("connection", (socket, request) => {
       const dirX = -Math.sin(shot.data.yaw) * Math.cos(shot.data.pitch), dirY = Math.sin(shot.data.pitch), dirZ = -Math.cos(shot.data.yaw) * Math.cos(shot.data.pitch);
       const along = (tx - sx) * dirX + (ty - sy) * dirY + (tz - sz) * dirZ;
       const distance = Math.hypot(tx - sx - along * dirX, ty - sy - along * dirY, tz - sz - along * dirZ);
-      const hit = along > 0 && along < 32 && distance < (shot.data.loadout === "sidearm" ? .3 : .44) && !wallBeforeTarget(room.map, sx, sz, dirX, dirZ, along);
+      const hit = along > 0 && along < 32 && distance < (shooter.weapon === "sniper-rifle" ? .24 : shooter.weapon === "pistol" ? .3 : .44) && !wallBeforeTarget(room.map, sx, sz, dirX, dirZ, along);
       const liveTarget = room.players[targetSeat];
-      if (hit) liveTarget.health = Math.max(0, liveTarget.health - (shot.data.loadout === "sidearm" ? 28 : 16));
+      if (hit) liveTarget.health = Math.max(0, liveTarget.health - weapon.damage);
       broadcastArena(room, { type: "shot", seat, hit, health: liveTarget.health });
-      if (liveTarget.health === 0) { shooter.kills++; liveTarget.deaths++; broadcastArena(room, { type: "elimination", killer: seat, victim: targetSeat, kills: shooter.kills, deaths: liveTarget.deaths }); const [spawnX, spawnZ, spawnYaw] = arenaLayouts[room.map].spawns[targetSeat === "host" ? 0 : 1], spawn = newArenaPlayer(spawnX / 8, (1 - spawnZ) / 12, spawnYaw, liveTarget); room.players[targetSeat] = spawn; broadcastArena(room, { type: "respawn", seat: targetSeat, player: publicArenaPlayer(spawn) }); }
+      if (liveTarget.health === 0) { shooter.kills++; shooter.cash += 1_000; liveTarget.deaths++; broadcastArena(room, { type: "elimination", killer: seat, victim: targetSeat, kills: shooter.kills, deaths: liveTarget.deaths, cash: shooter.cash }); const [spawnX, spawnZ, spawnYaw] = arenaLayouts[room.map].spawns[targetSeat === "host" ? 0 : 1], spawn = newArenaPlayer(spawnX / 8, (1 - spawnZ) / 12, spawnYaw, liveTarget); room.players[targetSeat] = spawn; broadcastArena(room, { type: "respawn", seat: targetSeat, player: publicArenaPlayer(spawn) }); }
     } catch { arenaSend(socket, { type: "error", message: "Malformed arena message." }); }
   });
   socket.on("close", () => { removeArenaQueue(socket); const assignment = !roomCode ? arenaAssignments.get(socket) : undefined; const assignedRoom = roomCode ?? assignment?.roomCode, assignedSeat = seat ?? assignment?.seat; arenaAssignments.delete(socket); const room = assignedRoom ? arenaRooms.get(assignedRoom) : undefined; if (!room || !assignedSeat || explicitLeave || room.clients[assignedSeat] !== socket) return; delete room.clients[assignedSeat]; room.started = false; const rival: ArenaSeat = assignedSeat === "host" ? "guest" : "host"; if (room.clients[rival]) broadcastArena(room, { type: "opponent-left", reconnecting: true }); room.disconnectTimers[assignedSeat] = setTimeout(() => discardArenaSeat(assignedRoom!, room, assignedSeat!), reconnectMs); });

@@ -1,6 +1,7 @@
 export type ArenaSeat = "host" | "guest";
 export type ArenaMapId = "iron-yard" | "freight-terminal" | "foundry";
-export type ArenaPeer = { x: number; y: number; z: number; yaw: number; pitch: number; health: number; kills: number; deaths: number };
+export type ArenaWeapon = "frontier-rifle" | "modern-rifle" | "smg" | "sniper-rifle" | "pistol";
+export type ArenaPeer = { x: number; y: number; z: number; yaw: number; pitch: number; health: number; kills: number; deaths: number; cash: number; owned: ArenaWeapon[]; weapon: ArenaWeapon };
 export type ArenaMetrics = { transport: "websocket" | "webtransport"; rttMs: number; jitterMs: number; snapshotLoss: number; snapshotsPerSecond: number; serverTick: number; serverLagMs: number; simulatedDrops: number };
 export type NetworkSimulation = { latencyMs: number; jitterMs: number; lossPercent: number };
 export type ArenaRegion = { id: string; label: string; url: string; statusUrl?: string; webTransportUrl?: string };
@@ -10,8 +11,9 @@ export type ArenaNetworkEvent =
   | { type: "queue-status"; searching: boolean; map?: ArenaMapId | "any" }
   | { type: "state"; map: ArenaMapId; started: boolean; serverTick: number; serverTime: number; ack: Record<ArenaSeat, number>; players: Record<ArenaSeat, ArenaPeer> }
   | { type: "shot"; seat: ArenaSeat; hit: boolean; health: number }
-  | { type: "elimination"; killer: ArenaSeat; victim: ArenaSeat; kills: number; deaths: number }
+  | { type: "elimination"; killer: ArenaSeat; victim: ArenaSeat; kills: number; deaths: number; cash: number }
   | { type: "respawn"; seat: ArenaSeat; player: ArenaPeer }
+  | { type: "purchase"; weapon: ArenaWeapon; cash: number }
   | { type: "opponent-left"; reconnecting: boolean }
   | { type: "metrics"; value: ArenaMetrics }
   | { type: "error"; message: string };

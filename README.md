@@ -1,6 +1,14 @@
 # High Noon Showdown
 
-High Noon Showdown v5.1.0 is an original Wild West browser game with local player progression, synthesized Web Audio effects, an AI-only Ghost Challenge personal-best race, casual multiplayer, and Iron Yard: a normal desktop browser FPS vertical slice. Iron Yard uses locally bundled CC0 Kenney character assets; its maps, weapons, sounds, dialogue, and branding remain original.
+High Noon Showdown v5.1.1 is an original Wild West browser game with local player progression, synthesized Web Audio effects, an AI-only Ghost Challenge personal-best race, casual multiplayer, and Iron Yard: a normal desktop browser FPS vertical slice. Iron Yard uses locally bundled CC0 Kenney character assets; its maps, weapons, sounds, dialogue, and branding remain original.
+
+## v5.1.1 Weapon And Economy Tuning
+
+- Body-shot thresholds are pistol 6, AR 4, SMG 5, and sniper 1.
+- Added the Cinder SMG and Lonestar Sniper to the buy/loadout panels.
+- Every elimination awards $1000 and weapons can be bought anywhere, at any match state.
+- Online purchases and selected weapons are validated and synchronized by the authority server.
+- Crouching no longer changes the collision floor, preventing the vertical bounce on release.
 
 ## v5.1.0 Multiplayer Gameplay
 
@@ -49,7 +57,7 @@ Iron Yard moved to a dedicated tactical game shell rather than an auto-start web
 
 ## Previous: Iron Yard Arsenal
 
-Iron Yard bot training now includes a cash buy menu, the wood-and-steel curved-magazine Bramble-47, the polymer Yardline-5, and the Ranger Pistol. First-person weapon models, original synthesized fire/reload/impact effects, and locally generated steel, wood, polymer, concrete, and brick textures make each loadout and the yard more distinct. Private 1v1 remains compatible with the existing carbine/sidearm server categories.
+Iron Yard bot training includes a cash buy menu, Bramble-47 AR, Yardline-5 AR, Cinder SMG, Lonestar Sniper, and Ranger Pistol. First-person weapon models, original synthesized fire/reload/impact effects, and locally generated steel, wood, polymer, concrete, and brick textures make each loadout and the yard more distinct. Private 1v1 validates purchases and selected weapons on the authority server.
 
 ## Previous: Iron Yard Tactical Bot AI
 
