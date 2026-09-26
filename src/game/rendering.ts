@@ -131,7 +131,7 @@ export function createFighter(color = "#4e6670", variant: FighterVariant = "char
     if (bounds.isEmpty() || !Number.isFinite(size.y) || size.y <= .001) throw new Error("Character GLB has no usable height");
     const scale = 1.72 / size.y;
     if (!Number.isFinite(scale) || scale <= 0) throw new Error("Character GLB has an invalid scale");
-    model.scale.setScalar(scale); model.position.set(-center.x * scale, -bounds.min.y * scale, -center.z * scale);
+    model.scale.setScalar(scale); model.position.set(-center.x * scale, -bounds.min.y * scale, -center.z * scale); model.rotation.y = Math.PI;
     let meshes = 0, texturedMeshes = 0, fallbackMaterials = 0;
     model.traverse(item => {
       if (!(item instanceof THREE.Mesh) || !item.geometry.getAttribute("position")?.count) return;

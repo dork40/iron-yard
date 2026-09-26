@@ -1,8 +1,13 @@
 # High Noon Showdown
 
-High Noon Showdown v5.0.5 is an original Wild West browser game with local player progression, synthesized Web Audio effects, an AI-only Ghost Challenge personal-best race, casual multiplayer, and Iron Yard: a normal desktop browser FPS vertical slice. Iron Yard uses locally bundled CC0 Kenney character assets; its maps, weapons, sounds, dialogue, and branding remain original.
+High Noon Showdown v5.1.0 is an original Wild West browser game with local player progression, synthesized Web Audio effects, an AI-only Ghost Challenge personal-best race, casual multiplayer, and Iron Yard: a normal desktop browser FPS vertical slice. Iron Yard uses locally bundled CC0 Kenney character assets; its maps, weapons, sounds, dialogue, and branding remain original.
 
-## v5.0.5 Competitive Networking Foundation
+## v5.1.0 Multiplayer Gameplay
+
+- Remote FPS players now use correct character facing and server-synchronized jump height.
+- Swept local collision and matching server collision layouts prevent movement through thin map cover.
+- Private FPS rooms support Iron Yard, Freight Terminal, and Foundry; the host selects the locked map.
+- FPS Quick Game is a real, anonymous, connection-bound queue in the authority service. It is memory-only, scoped to one server instance, and is not ranked matchmaking.
 
 Iron Yard keeps the compatible private six-character create/join/resume room flow, but the arena protocol is now input-driven. The authority runs a fixed 60 Hz simulation (configurable within safe bounds), accepts sequence-numbered bounded movement/aim inputs, acknowledges the last input in 30 Hz snapshots, and owns accepted position, health, shots, eliminations, and respawns. The browser predicts its own movement, blends corrections from acknowledged snapshots, and renders remote snapshots behind a short interpolation delay.
 

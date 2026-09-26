@@ -14,8 +14,14 @@ export class FpsPlayer {
     if (input.keys.has(input.bindings.jump) && this.grounded) { this.velocity.y = 6.2; this.grounded = false; }
     this.velocity.y -= 18 * dt; const next = this.camera.position.clone().addScaledVector(this.velocity, dt); const feet = this.crouched ? .95 : 1.7;
     if (next.y <= feet) { next.y = feet; this.velocity.y = 0; this.grounded = true; }
-    const body = new THREE.Box3().setFromCenterAndSize(new THREE.Vector3(next.x, next.y - .75, next.z), new THREE.Vector3(.65, 1.5, .65));
-    if (!this.colliders.some(box => box.intersectsBox(body))) this.camera.position.copy(next); else { this.velocity.x = 0; this.velocity.z = 0; }
+    // Sweep short steps to prevent a delayed frame from tunneling through thin cover.
+    const start = this.camera.position.clone(), steps = Math.max(1, Math.ceil(start.distanceTo(next) / .12));
+    for (let step = 1; step <= steps; step++) {
+      const candidate = start.clone().lerp(next, step / steps);
+      const body = new THREE.Box3().setFromCenterAndSize(new THREE.Vector3(candidate.x, candidate.y - .75, candidate.z), new THREE.Vector3(.65, 1.5, .65));
+      if (!this.colliders.some(box => box.intersectsBox(body))) this.camera.position.copy(candidate);
+      else { this.velocity.x = 0; this.velocity.z = 0; break; }
+    }
     this.camera.rotation.y = this.yaw; this.camera.rotation.x = this.pitch;
   }
 }

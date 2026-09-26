@@ -27,8 +27,8 @@ export function mountArena(_onComplete: (result: ArenaResult) => void) {
   const settings = loadSettings(), scene = new THREE.Scene(), camera = new THREE.PerspectiveCamera(settings.fov, 16 / 9, .05, 90), renderer = createRenderer(host, settings.graphics), colliders: THREE.Box3[] = [], initialMap = buildArenaMap(scene, "iron-yard"), player = new FpsPlayer(camera, colliders), weapon = new WeaponState(), recoil = new Recoil(), network = new ArenaNetwork(), tactical = new TacticalRound();
   colliders.push(...initialMap.colliders); camera.position.copy(initialMap.playerSpawn); scene.add(camera);
   const hemisphere = new THREE.HemisphereLight("#dce9ed", "#343334", 2), sun = new THREE.DirectionalLight("#ffe0bb", 3); sun.castShadow = settings.graphics.shadows; scene.add(hemisphere, sun);
-  let gun = createWeapon(camera, weapon.spec.id), bots: Bot[] = [], remote: THREE.Group | undefined, seat: "host" | "guest" | undefined, online = false, active = false, aiming = false, shots = 0, hits = 0, kills = 0, onlineKills = 0, onlineDeaths = 0, currentRoom = "", lastInputSync = 0, lastFrame = performance.now(), config: ArenaConfig = { ...defaultArenaConfig }, openPanel: ArenaPanel | undefined, pausedAt = 0, binding: BindingAction | undefined, correction: THREE.Vector3 | undefined;
-  const remoteSamples: { receivedAt: number; x: number; z: number; yaw: number }[] = [];
+  let gun = createWeapon(camera, weapon.spec.id), bots: Bot[] = [], remote: THREE.Group | undefined, seat: "host" | "guest" | undefined, online = false, active = false, aiming = false, shots = 0, hits = 0, kills = 0, onlineKills = 0, onlineDeaths = 0, currentRoom = "", onlineMap: ArenaMapId = "iron-yard", lastInputSync = 0, lastFrame = performance.now(), config: ArenaConfig = { ...defaultArenaConfig }, openPanel: ArenaPanel | undefined, pausedAt = 0, binding: BindingAction | undefined, correction: THREE.Vector3 | undefined;
+  const remoteSamples: { receivedAt: number; x: number; y: number; z: number; yaw: number }[] = [];
   let pendingInputs: number[] = [];
   const owned = new Set<WeaponId>(["pistol"]);
   const raycaster = new THREE.Raycaster(), muzzle = new THREE.PointLight("#ffbd72", 0, 4); camera.add(muzzle);
@@ -123,7 +123,7 @@ export function mountArena(_onComplete: (result: ArenaResult) => void) {
   };
   const equip = (id: WeaponId) => { weapon.select(id); camera.remove(gun); gun = createWeapon(camera, id); message.textContent = `${weapons[id].name} EQUIPPED.`; updateHud(); };
   const buy = (id: WeaponId) => { if (!owned.has(id)) { const notice = tactical.buy(id, weapons[id].price, owned, inBuyZone()); if (notice) { message.textContent = notice; updateHud(); return; } message.textContent = `${weapons[id].name} PURCHASED.`; } equip(id); };
-  const applySpawn = (value: { x: number; z: number; yaw: number; pitch: number; health: number }) => { camera.position.set(value.x * 8, 1.7, 1 - value.z * 12); player.yaw = value.yaw; player.pitch = value.pitch; player.velocity.set(0, 0, 0); player.health = value.health; };
+  const applySpawn = (value: { x: number; y: number; z: number; yaw: number; pitch: number; health: number }) => { camera.position.set(value.x * 8, 1.7 + value.y, 1 - value.z * 12); player.yaw = value.yaw; player.pitch = value.pitch; player.velocity.set(0, 0, 0); player.health = value.health; };
   const setOnlineStatus = (text: string) => { if (onlineStatus) onlineStatus.textContent = text; };
   const updateRoomSharing = () => {
     if (copyRoom) copyRoom.disabled = !currentRoom;
@@ -140,17 +140,19 @@ export function mountArena(_onComplete: (result: ArenaResult) => void) {
       if (event.status === "closed") { active = false; document.exitPointerLock?.(); message.textContent = "CONNECTION CLOSED. CREATE OR JOIN A ROOM TO TRY AGAIN."; setOnlineStatus(event.reason ? `CONNECTION CLOSED: ${event.reason}` : "CONNECTION CLOSED. THE PRIVATE SERVER MAY BE UNAVAILABLE."); }
       return;
     }
-    if (event.type === "joined") { seat = event.seat; currentRoom = event.room; updateRoomSharing(); message.textContent = `ROOM ${event.room}. WAITING FOR RIVAL.`; setOnlineStatus(event.seat === "host" ? `ROOM ${event.room} CREATED. SHARE THE CODE; PLAY STARTS AUTOMATICALLY WHEN THEY JOIN.` : `JOINED ROOM ${event.room}. WAITING FOR THE HOST TO START.`); return; }
+    if (event.type === "joined") { seat = event.seat; currentRoom = event.room; onlineMap = arenaMaps[event.map] ? event.map : "iron-yard"; setMap(onlineMap); updateRoomSharing(); message.textContent = `ROOM ${event.room}. ${arenaMaps[onlineMap].name.toUpperCase()} SELECTED. WAITING FOR RIVAL.`; setOnlineStatus(event.seat === "host" ? `ROOM ${event.room} CREATED ON ${arenaMaps[onlineMap].name.toUpperCase()}. SHARE THE CODE; PLAY STARTS AUTOMATICALLY WHEN THEY JOIN.` : `JOINED ROOM ${event.room} ON ${arenaMaps[onlineMap].name.toUpperCase()}. WAITING FOR THE HOST TO START.`); return; }
+    if (event.type === "queue-status") { setOnlineStatus(event.searching ? `QUICK GAME SEARCHING: ${(event.map ?? "any").replaceAll("-", " ").toUpperCase()}.` : "QUICK GAME SEARCH CANCELLED."); return; }
     if (event.type === "state" && !event.started) { if (seat) setOnlineStatus(`ROOM ${currentRoom}. WAITING FOR THE OTHER PLAYER.`); return; }
-    if (event.type === "state" && event.started && !active) deploy(true);
+    if (event.type === "state" && event.started && !active) deploy(true, arenaMaps[event.map] ? event.map : onlineMap);
     if (event.type === "state" && active && seat) {
       const ownSeat = seat, own = event.players[ownSeat], other = event.players[ownSeat === "host" ? "guest" : "host"];
-      if (!remote) { remote = createFighter("#405e6a", "character-k"); scene.add(remote); applySpawn(own); }
+      const ownY = Number.isFinite(own.y) ? own.y : 0, otherY = Number.isFinite(other.y) ? other.y : 0;
+      if (!remote) { remote = createFighter("#405e6a", "character-k"); scene.add(remote); applySpawn({ ...own, y: ownY }); }
       // Local movement is predicted by FpsPlayer; prune acknowledged inputs and blend only server correction.
       pendingInputs = pendingInputs.filter(sequence => sequence > event.ack[ownSeat]);
-      const confirmed = new THREE.Vector3(own.x * 8, camera.position.y, 1 - own.z * 12);
+      const confirmed = new THREE.Vector3(own.x * 8, 1.7 + ownY, 1 - own.z * 12);
       if (camera.position.distanceTo(confirmed) > .12) correction = confirmed;
-      remoteSamples.push({ receivedAt: performance.now(), x: other.x, z: other.z, yaw: other.yaw });
+      remoteSamples.push({ receivedAt: performance.now(), x: other.x, y: otherY, z: other.z, yaw: other.yaw });
       while (remoteSamples.length > 12) remoteSamples.shift();
       player.health = own.health; onlineKills = own.kills; onlineDeaths = own.deaths;
       setOnlineStatus(`ROOM ${currentRoom}. LIVE: ${own.kills} ELIMS / ${own.deaths} DEATHS.`);
@@ -190,8 +192,10 @@ export function mountArena(_onComplete: (result: ArenaResult) => void) {
   document.querySelector<HTMLInputElement>("#cross-import")?.addEventListener("change", event => { const value = importCrosshair((event.target as HTMLInputElement).value); if (value) { settings.crosshair = value; paintCrosshair(reticle, value); saveSettings(settings); syncSettingsControls(); } });
   syncSettingsControls(); updateHud();
   document.querySelector("#arena-bot")?.addEventListener("click", () => { config = { difficulty: document.querySelector<HTMLSelectElement>("#arena-difficulty")?.value as ArenaConfig["difficulty"] ?? "standard", botCount: Number(document.querySelector<HTMLSelectElement>("#arena-bot-count")?.value ?? 1) as ArenaConfig["botCount"] }; const selectedMap = document.querySelector<HTMLSelectElement>("#arena-map")?.value as ArenaMapId; deploy(false, arenaMaps[selectedMap] ? selectedMap : "iron-yard"); });
-  document.querySelector("#arena-create")?.addEventListener("click", () => { if (network.connect("create", "", handleNetwork)) { currentRoom = ""; updateRoomSharing(); message.textContent = "CREATING PRIVATE ROOM..."; } });
+  document.querySelector("#arena-create")?.addEventListener("click", () => { const map = document.querySelector<HTMLSelectElement>("#arena-online-map")?.value as ArenaMapId; if (arenaMaps[map] && network.connect("create", map, handleNetwork)) { currentRoom = ""; updateRoomSharing(); message.textContent = `CREATING ${arenaMaps[map].name.toUpperCase()} PRIVATE ROOM...`; } });
   document.querySelector("#arena-join")?.addEventListener("click", () => { const code = document.querySelector<HTMLInputElement>("#arena-room-code")?.value.trim().toUpperCase() ?? ""; if (!/^[A-Z0-9]{6}$/.test(code)) { setOnlineStatus("ENTER THE SIX-CHARACTER ROOM CODE."); return; } if (network.connect("join", code, handleNetwork)) { currentRoom = ""; updateRoomSharing(); message.textContent = "JOINING PRIVATE ROOM..."; } });
+  document.querySelector("#arena-quick-game")?.addEventListener("click", () => { const map = document.querySelector<HTMLSelectElement>("#arena-quick-map")?.value as ArenaMapId | "any"; if (network.connect("queue", map, handleNetwork)) { currentRoom = ""; updateRoomSharing(); message.textContent = "SEARCHING FOR A QUICK GAME RIVAL..."; } });
+  document.querySelector("#arena-cancel-queue")?.addEventListener("click", () => network.cancelQueue());
   copyRoom?.addEventListener("click", () => { if (!currentRoom || !navigator.clipboard) return; void navigator.clipboard.writeText(currentRoom).then(() => setOnlineStatus(`ROOM CODE ${currentRoom} COPIED.`)).catch(() => setOnlineStatus("THE BROWSER COULD NOT COPY THE ROOM CODE.")); });
   shareRoom?.addEventListener("click", () => { if (!currentRoom || !navigator.share) return; void navigator.share({ title: "High Noon Showdown: Iron Yard", text: `Join my Iron Yard private 1v1 room: ${currentRoom}` }).catch(() => undefined); });
   leaveRoom?.addEventListener("click", () => { network.close(); active = false; online = false; currentRoom = ""; remote?.removeFromParent(); remote = undefined; leaveRoom.hidden = true; updateRoomSharing(); document.exitPointerLock?.(); message.textContent = "YOU LEFT THE PRIVATE ROOM."; setOnlineStatus("YOU LEFT THE PRIVATE ROOM. CREATE OR JOIN ANOTHER CODE."); updateHud(); });
@@ -265,8 +269,8 @@ export function mountArena(_onComplete: (result: ArenaResult) => void) {
         const sample = remoteSamples[0], nextSample = remoteSamples[1];
         if (sample) {
           const blend = nextSample ? THREE.MathUtils.clamp((renderAt - sample.receivedAt) / Math.max(1, nextSample.receivedAt - sample.receivedAt), 0, 1) : 1;
-          const x = THREE.MathUtils.lerp(sample.x, nextSample?.x ?? sample.x, blend), z = THREE.MathUtils.lerp(sample.z, nextSample?.z ?? sample.z, blend), yaw = THREE.MathUtils.lerp(sample.yaw, nextSample?.yaw ?? sample.yaw, blend);
-          remote.position.lerp(new THREE.Vector3(x * 8, 0, 1 - z * 12), Math.min(1, dt * 16)); remote.rotation.y += THREE.MathUtils.euclideanModulo(yaw + Math.PI - remote.rotation.y + Math.PI, Math.PI * 2) - Math.PI;
+          const x = THREE.MathUtils.lerp(sample.x, nextSample?.x ?? sample.x, blend), y = THREE.MathUtils.lerp(sample.y, nextSample?.y ?? sample.y, blend), z = THREE.MathUtils.lerp(sample.z, nextSample?.z ?? sample.z, blend), yaw = THREE.MathUtils.lerp(sample.yaw, nextSample?.yaw ?? sample.yaw, blend);
+          remote.position.lerp(new THREE.Vector3(x * 8, y, 1 - z * 12), Math.min(1, dt * 16)); remote.rotation.y += THREE.MathUtils.euclideanModulo(yaw - remote.rotation.y + Math.PI, Math.PI * 2) - Math.PI;
         }
         updateFighter(remote, dt, now);
       }

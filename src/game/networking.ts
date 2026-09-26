@@ -1,12 +1,14 @@
 export type ArenaSeat = "host" | "guest";
-export type ArenaPeer = { x: number; z: number; yaw: number; pitch: number; health: number; kills: number; deaths: number };
+export type ArenaMapId = "iron-yard" | "freight-terminal" | "foundry";
+export type ArenaPeer = { x: number; y: number; z: number; yaw: number; pitch: number; health: number; kills: number; deaths: number };
 export type ArenaMetrics = { transport: "websocket" | "webtransport"; rttMs: number; jitterMs: number; snapshotLoss: number; snapshotsPerSecond: number; serverTick: number; serverLagMs: number; simulatedDrops: number };
 export type NetworkSimulation = { latencyMs: number; jitterMs: number; lossPercent: number };
 export type ArenaRegion = { id: string; label: string; url: string; statusUrl?: string; webTransportUrl?: string };
 export type ArenaNetworkEvent =
   | { type: "connection"; status: "connecting" | "connected" | "reconnecting" | "closed"; transport?: "websocket" | "webtransport"; reason?: string }
-  | { type: "joined"; room: string; seat: ArenaSeat; reconnectToken: string; region: string; tickRate: number; snapshotRate: number }
-  | { type: "state"; started: boolean; serverTick: number; serverTime: number; ack: Record<ArenaSeat, number>; players: Record<ArenaSeat, ArenaPeer> }
+  | { type: "joined"; room: string; seat: ArenaSeat; reconnectToken: string; map: ArenaMapId; region: string; tickRate: number; snapshotRate: number }
+  | { type: "queue-status"; searching: boolean; map?: ArenaMapId | "any" }
+  | { type: "state"; map: ArenaMapId; started: boolean; serverTick: number; serverTime: number; ack: Record<ArenaSeat, number>; players: Record<ArenaSeat, ArenaPeer> }
   | { type: "shot"; seat: ArenaSeat; hit: boolean; health: number }
   | { type: "elimination"; killer: ArenaSeat; victim: ArenaSeat; kills: number; deaths: number }
   | { type: "respawn"; seat: ArenaSeat; player: ArenaPeer }
@@ -16,6 +18,7 @@ export type ArenaNetworkEvent =
 
 type TransportHandlers = { open: () => void; message: (value: string) => void; error: () => void; close: (reason?: string) => void };
 interface ArenaTransport { readonly kind: "websocket" | "webtransport"; open(): void; send(value: string): void; close(): void; }
+type ArenaOpenMessage = { type: "create"; map: ArenaMapId } | { type: "join"; room: string } | { type: "queue"; map: ArenaMapId | "any" } | { type: "resume"; room: string; reconnectToken: string };
 
 interface WebTransportSession {
   ready: Promise<void>;
@@ -141,15 +144,16 @@ export class ArenaNetwork {
   private snapshotRate = 30;
   private inputSequence = 0;
 
-  connect(kind: "create" | "join", room: string, onEvent: (event: ArenaNetworkEvent) => void) {
+  connect(kind: "create" | "join" | "queue", value: string, onEvent: (event: ArenaNetworkEvent) => void) {
     if (!arenaSocketUrl()) return false;
     this.close();
     this.intentionalClose = false;
     this.reconnectAttempts = 0;
     this.listener = onEvent;
-    this.open(kind === "create" ? { type: "create" } : { type: "join", room });
+    this.open(kind === "create" ? { type: "create", map: value as ArenaMapId } : kind === "queue" ? { type: "queue", map: value as ArenaMapId | "any" } : { type: "join", room: value });
     return true;
   }
+  cancelQueue() { this.send({ type: "cancel-queue" }); }
 
   setSimulation(value: Partial<NetworkSimulation>) {
     this.simulation = { latencyMs: numberIn(value.latencyMs, this.simulation.latencyMs, 0, 2_000), jitterMs: numberIn(value.jitterMs, this.simulation.jitterMs, 0, 1_000), lossPercent: numberIn(value.lossPercent, this.simulation.lossPercent, 0, 50) };
@@ -170,7 +174,7 @@ export class ArenaNetwork {
     this.transport?.close(); this.transport = undefined;
     this.room = undefined; this.reconnectToken = undefined; this.reconnectAttempts = 0;
   }
-  private open(message: { type: "create" } | { type: "join"; room: string } | { type: "resume"; room: string; reconnectToken: string }, forceWebSocket = false) {
+  private open(message: ArenaOpenMessage, forceWebSocket = false) {
     const socketUrl = arenaSocketUrl();
     if (!socketUrl || !this.listener) return;
     this.listener({ type: "connection", status: this.reconnectAttempts ? "reconnecting" : "connecting" });
@@ -189,7 +193,7 @@ export class ArenaNetwork {
     this.transport = webTransportUrl ? new WebTransportArenaTransport(webTransportUrl, handlers) : new WebSocketArenaTransport(socketUrl, handlers);
     this.transport.open();
   }
-  private handleClose(message: { type: "create" } | { type: "join"; room: string } | { type: "resume"; room: string; reconnectToken: string }, reason?: string) {
+  private handleClose(message: ArenaOpenMessage, reason?: string) {
     this.transport = undefined; window.clearInterval(this.pingTimer);
     if (this.intentionalClose) return;
     if (this.room && this.reconnectToken && this.reconnectAttempts < 3) {

@@ -1,6 +1,6 @@
-# High Noon Authority Service v5.0.5
+# High Noon Authority Service v5.1.0
 
-This deployable service hosts the optional TURN credential issuer, the legacy server-timed rounds example, and Iron Yard private 1v1 rooms. The arena is a competitive networking foundation, not a production matchmaker or ranked service.
+This deployable service hosts the optional TURN credential issuer, the legacy server-timed rounds example, and Iron Yard private 1v1 rooms. It also provides a small anonymous FPS Quick Game queue for one authority process. The arena is a competitive networking foundation, not a production or ranked matchmaker.
 
 ## Deploy
 
@@ -12,7 +12,9 @@ This deployable service hosts the optional TURN credential issuer, the legacy se
 
 ## Arena Protocol
 
-Private create, join, leave, and resume rooms remain compatible conceptually: a host sends `{ "type": "create" }`, a guest sends `{ "type": "join", "room": "ABC123" }`, and a reconnecting client sends its opaque room reconnect token. Rooms, scores, tokens, history, and reservations are memory-only and disappear on process restart.
+Private create, join, leave, and resume rooms remain compatible conceptually: a host sends `{ "type": "create", "map": "foundry" }`, a guest sends `{ "type": "join", "room": "ABC123" }`, and a reconnecting client sends its opaque room reconnect token. The host-selected map is locked for both seats. Rooms, scores, tokens, history, and reservations are memory-only and disappear on process restart.
+
+Quick Game clients send `{ "type": "queue", "map": "any" }` or a selected map ID. The service pairs compatible live sockets FIFO, creates a normal room, and sends the same `joined` and state messages. `{ "type": "cancel-queue" }` removes a waiting socket. This queue does not survive restart, does not work across replicas or regions, and has no player identity or skill matching.
 
 After both seats connect, the client sends bounded sequenced input packets:
 
@@ -24,7 +26,7 @@ The server simulates movement at `TICK_RATE`, emits snapshots at `SNAPSHOT_RATE`
 
 Packets are limited to 1 KiB and 150 messages per second per socket. Zod schemas, sequence monotonicity, movement/collision bounds, aim drift, fire cadence, origin checks, and reconnect reservation checks are enforced. These checks reduce malformed and obvious bad packets; they are not an anti-cheat system and do not authenticate players.
 
-`GET /health` and `GET /v1/status` return region, configured tick/snapshot rates, current tick, tick lag, last tick duration, room count, and connected player count. A static frontend region configuration can measure `/v1/status` RTT before connecting. It does not implement server discovery or matchmaking.
+`GET /health` and `GET /v1/status` return region, configured tick/snapshot rates, current tick, tick lag, last tick duration, room count, and connected player count. A static frontend region configuration can measure `/v1/status` RTT before connecting. It does not implement server discovery, regional allocation, or durable matchmaking.
 
 ## Transport
 
