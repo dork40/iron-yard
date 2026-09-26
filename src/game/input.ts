@@ -1,4 +1,5 @@
 import type { KeyBindings } from "./settings";
+export type MovementInput = { moveX: number; moveZ: number; sprint: boolean; crouch: boolean; jump: boolean };
 export class DesktopInput {
   readonly keys = new Set<string>();
   firing = false;
@@ -16,5 +17,6 @@ export class DesktopInput {
   private release = (event: MouseEvent) => { if (event.button === 0) this.firing = false; };
   private reset = () => { this.firing = false; };
   private lockChange = () => { if (document.pointerLockElement !== this.target) this.reset(); };
+  movement(): MovementInput { return { moveX: Number(this.keys.has(this.bindings.right)) - Number(this.keys.has(this.bindings.left)), moveZ: Number(this.keys.has(this.bindings.forward)) - Number(this.keys.has(this.bindings.back)), sprint: this.keys.has("ShiftLeft"), crouch: this.keys.has("ControlLeft"), jump: this.keys.has(this.bindings.jump) }; }
   destroy() { document.removeEventListener("keydown", this.down); document.removeEventListener("keyup", this.up); document.removeEventListener("mousemove", this.move); document.removeEventListener("pointerlockchange", this.lockChange); window.removeEventListener("blur", this.reset); document.removeEventListener("mouseup", this.release); this.target.removeEventListener("mousedown", this.mouse); }
 }

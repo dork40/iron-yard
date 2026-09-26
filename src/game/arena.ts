@@ -2,7 +2,8 @@ import * as THREE from "three";
 import { playSound } from "./audio";
 import { resetBot, updateBot, type Bot } from "./bots";
 import { paintCrosshair } from "./crosshair";
-import { DesktopInput } from "./input";
+import { DesktopInput, type MovementInput } from "./input";
+import { TouchInput } from "./touch-input";
 import { arenaMaps, buildArenaMap, type ArenaMap, type ArenaMapId } from "./maps";
 import { ArenaNetwork, arenaSocketUrl, type ArenaNetworkEvent } from "./networking";
 import { FpsPlayer } from "./player";
@@ -107,13 +108,16 @@ export function mountArena(_onComplete: (result: ArenaResult) => void) {
   const tracer = (from: THREE.Vector3, to: THREE.Vector3, color = "#ffd28a") => { const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints([from, to]), new THREE.LineBasicMaterial({ color })); scene.add(line); window.setTimeout(() => { scene.remove(line); line.geometry.dispose(); (line.material as THREE.Material).dispose(); }, 90); };
   const wallDistance = (from: THREE.Vector3, direction: THREE.Vector3) => { let nearest = Infinity; for (const box of colliders) { const point = new THREE.Vector3(); if (raycaster.ray.set(from, direction).intersectBox(box, point)) nearest = Math.min(nearest, point.distanceTo(from)); } return nearest; };
   const hitFeedback = (text: string) => { feedback.textContent = text; window.setTimeout(() => { feedback.textContent = ""; }, 380); };
-  const fire = () => { const now = performance.now(); if (!active || openPanel || document.pointerLockElement !== renderer.domElement || !weapon.canFire(now) || (!online && tactical.phase === "round-end")) return; weapon.fired(now); triggerWeaponFire(gun, now); shots++; recoil.kick(weapon.spec.recoil, weapon.spec.recoil * .55); muzzle.intensity = 5; window.setTimeout(() => muzzle.intensity = 0, 35); const origin = camera.position.clone(), direction = new THREE.Vector3(); camera.getWorldDirection(direction); direction.x += (Math.random() - .5) * weapon.spec.spread; direction.y += (Math.random() - .5) * weapon.spec.spread; direction.normalize(); raycaster.set(origin, direction); const wall = wallDistance(origin, direction), impacts = bots.flatMap(bot => { const hit = raycaster.intersectObject(bot.group, true)[0]; return hit && hit.distance < wall ? [{ bot, hit }] : []; }).sort((a, b) => a.hit.distance - b.hit.distance); const impact = impacts[0]?.hit.point ?? origin.clone().addScaledVector(direction, Math.min(wall, 35)); tracer(origin, impact); if (online) network.send({ type: "shot", weapon: weapon.spec.id, yaw: player.yaw, pitch: player.pitch, shotTick: network.serverTick() }); else if (impacts[0]) { const { bot, hit } = impacts[0], headshot = hit.point.y - bot.group.position.y > 1.35; bot.health -= headshot ? weapon.spec.headshot : weapon.spec.damage; hits++; hitFeedback(headshot ? "HEADSHOT" : "HIT"); playSound("impact"); if (bot.health <= 0) { kills++; tactical.elimination(); bot.health = 100; bot.group.position.copy(bot.spawn); resetBot(bot, now); message.textContent = "ELIMINATION. +$1000. TARGET REDEPLOYED."; } } playSound(({ frontier: "frontier-shot", modern: "modern-shot", pistol: "pistol-shot" } as const)[weapon.spec.sound]); updateHud(now); };
+  const fire = () => { const now = performance.now(); if (!active || openPanel || !canControl() || !weapon.canFire(now) || (!online && tactical.phase === "round-end")) return; weapon.fired(now); triggerWeaponFire(gun, now); shots++; recoil.kick(weapon.spec.recoil, weapon.spec.recoil * .55); muzzle.intensity = 5; window.setTimeout(() => muzzle.intensity = 0, 35); const origin = camera.position.clone(), direction = new THREE.Vector3(); camera.getWorldDirection(direction); direction.x += (Math.random() - .5) * weapon.spec.spread; direction.y += (Math.random() - .5) * weapon.spec.spread; direction.normalize(); raycaster.set(origin, direction); const wall = wallDistance(origin, direction), impacts = bots.flatMap(bot => { const hit = raycaster.intersectObject(bot.group, true)[0]; return hit && hit.distance < wall ? [{ bot, hit }] : []; }).sort((a, b) => a.hit.distance - b.hit.distance); const impact = impacts[0]?.hit.point ?? origin.clone().addScaledVector(direction, Math.min(wall, 35)); tracer(origin, impact); if (online) network.send({ type: "shot", weapon: weapon.spec.id, yaw: player.yaw, pitch: player.pitch, shotTick: network.serverTick() }); else if (impacts[0]) { const { bot, hit } = impacts[0], headshot = hit.point.y - bot.group.position.y > 1.35; bot.health -= headshot ? weapon.spec.headshot : weapon.spec.damage; hits++; hitFeedback(headshot ? "HEADSHOT" : "HIT"); playSound("impact"); if (bot.health <= 0) { kills++; tactical.elimination(); bot.health = 100; bot.group.position.copy(bot.spawn); resetBot(bot, now); message.textContent = "ELIMINATION. +$1000. TARGET REDEPLOYED."; } } playSound(({ frontier: "frontier-shot", modern: "modern-shot", pistol: "pistol-shot" } as const)[weapon.spec.sound]); updateHud(now); };
   const input = new DesktopInput(renderer.domElement, (x, y) => player.look(x, y, settings.sensitivity), fire, () => aiming = !aiming, settings.bindings);
-  const request = () => { if (active && !openPanel) renderer.domElement.requestPointerLock().catch(() => message.textContent = "POINTER LOCK WAS BLOCKED. CLICK AGAIN."); };
+  let touch: TouchInput | undefined;
+  const touchEnabled = () => Boolean(touch?.enabled);
+  const canControl = () => document.pointerLockElement === renderer.domElement || touchEnabled();
+  const request = () => { if (!active || openPanel) return; if (touchEnabled()) { lock.hidden = true; pause.hidden = true; return; } renderer.domElement.requestPointerLock().catch(() => message.textContent = "POINTER LOCK WAS BLOCKED. CLICK AGAIN."); };
   const resize = () => { const bounds = host.getBoundingClientRect(); renderer.setSize(bounds.width, bounds.height, false); camera.aspect = bounds.width / bounds.height; camera.updateProjectionMatrix(); };
   const observer = new ResizeObserver(resize); observer.observe(host); resize(); paintCrosshair(reticle, settings.crosshair);
   const reload = () => {
-    if (!active || openPanel || document.pointerLockElement !== renderer.domElement) return;
+    if (!active || openPanel || !canControl()) return;
     const result = weapon.reload(() => { playSound("reload"); message.textContent = "RELOAD COMPLETE."; updateHud(); });
     if (result === "started") message.textContent = "RELOADING...";
     if (result === "reloading") message.textContent = "RELOAD IN PROGRESS.";
@@ -121,6 +125,17 @@ export function mountArena(_onComplete: (result: ArenaResult) => void) {
     if (result === "empty") message.textContent = "NO RESERVE AMMO.";
     updateHud();
   };
+  const touchRoot = document.querySelector<HTMLElement>("#arena-touch-controls"), touchStickArea = document.querySelector<HTMLElement>("#touch-stick-area"), touchAimArea = document.querySelector<HTMLElement>("#touch-aim-area"), touchStick = document.querySelector<HTMLElement>("#touch-stick");
+  const applyTouchSettings = () => {
+    if (!touch) return;
+    touch.applyOptions(settings.touch);
+    const enabled = settings.touch.controls === "on" || settings.touch.controls === "auto" && matchMedia("(pointer: coarse)").matches;
+    touch.setEnabled(enabled); arenaFrame.dataset.touch = String(enabled); lock.textContent = enabled ? "TAP TO START" : "CLICK TO DEPLOY";
+  };
+  if (touchRoot && touchStickArea && touchAimArea && touchStick) {
+    touch = new TouchInput(touchRoot, touchStickArea, touchAimArea, touchStick, settings.touch, (x, y) => player.look(x * settings.sensitivity, y * settings.sensitivity), fire, reload);
+    applyTouchSettings();
+  }
   const equip = (id: WeaponId) => { weapon.select(id); camera.remove(gun); gun = createWeapon(camera, id); message.textContent = `${weapons[id].name} EQUIPPED.`; updateHud(); };
   const buy = (id: WeaponId) => { if (online) { network.send({ type: "purchase", weapon: id }); message.textContent = `BUYING ${weapons[id].name}...`; return; } if (!owned.has(id)) { const notice = tactical.buy(id, weapons[id].price, owned, inBuyZone()); if (notice) { message.textContent = notice; updateHud(); return; } message.textContent = `${weapons[id].name} PURCHASED.`; } equip(id); };
   const applySpawn = (value: { x: number; y: number; z: number; yaw: number; pitch: number; health: number }) => { camera.position.set(value.x * 8, 1.7 + value.y, 1 - value.z * 12); player.yaw = value.yaw; player.pitch = value.pitch; player.velocity.set(0, 0, 0); player.health = value.health; };
@@ -170,27 +185,32 @@ export function mountArena(_onComplete: (result: ArenaResult) => void) {
     if (event.type === "error") { message.textContent = event.message; setOnlineStatus(event.message); }
   };
   let suppressPauseForFullscreenExit = false;
-  const onLockChange = () => { const locked = document.pointerLockElement === renderer.domElement; pause.hidden = locked || !active || Boolean(openPanel) || suppressPauseForFullscreenExit; lock.hidden = locked; };
+  const onLockChange = () => { const locked = document.pointerLockElement === renderer.domElement; pause.hidden = locked || touchEnabled() || !active || Boolean(openPanel) || suppressPauseForFullscreenExit; lock.hidden = locked; };
   const syncSettingsControls = () => {
     const sensitivity = document.querySelector<HTMLInputElement>("#fps-sensitivity"), sensitivityValue = document.querySelector<HTMLOutputElement>("#fps-sensitivity-value"), color = document.querySelector<HTMLInputElement>("#cross-color"), size = document.querySelector<HTMLInputElement>("#cross-size"), quality = document.querySelector<HTMLSelectElement>("#graphics-quality"), pixelRatio = document.querySelector<HTMLInputElement>("#graphics-pixel-ratio"), shadows = document.querySelector<HTMLInputElement>("#graphics-shadows");
     if (sensitivity) sensitivity.value = String(settings.sensitivity); if (sensitivityValue) sensitivityValue.value = settings.sensitivity.toFixed(4); if (color) color.value = settings.crosshair.color; if (size) size.value = String(settings.crosshair.size); if (quality) quality.value = settings.graphics.quality; if (pixelRatio) pixelRatio.value = String(settings.graphics.pixelRatio); if (shadows) shadows.checked = settings.graphics.shadows;
+    const touchControls = document.querySelector<HTMLSelectElement>("#touch-controls"), touchJoystick = document.querySelector<HTMLSelectElement>("#touch-joystick"), touchSize = document.querySelector<HTMLInputElement>("#touch-size"), touchOpacity = document.querySelector<HTMLInputElement>("#touch-opacity"), touchHorizontal = document.querySelector<HTMLInputElement>("#touch-horizontal"), touchVertical = document.querySelector<HTMLInputElement>("#touch-vertical"), touchHaptics = document.querySelector<HTMLInputElement>("#touch-haptics");
+    if (touchControls) touchControls.value = settings.touch.controls; if (touchJoystick) touchJoystick.value = settings.touch.joystick; if (touchSize) touchSize.value = String(settings.touch.size); if (touchOpacity) touchOpacity.value = String(settings.touch.opacity); if (touchHorizontal) touchHorizontal.value = String(settings.touch.horizontalSensitivity); if (touchVertical) touchVertical.value = String(settings.touch.verticalSensitivity); if (touchHaptics) touchHaptics.checked = settings.touch.haptics;
     document.querySelectorAll<HTMLButtonElement>("[data-bind]").forEach(button => { const action = button.dataset.bind as BindingAction; button.querySelector("b")!.textContent = settings.bindings[action].replace("Key", ""); });
   };
   const graphics = () => { applyGraphicsSettings(renderer, settings.graphics); sun.castShadow = settings.graphics.shadows; resize(); saveSettings(settings); };
   const sensitivity = document.querySelector<HTMLInputElement>("#fps-sensitivity"), sensitivityValue = document.querySelector<HTMLOutputElement>("#fps-sensitivity-value"), color = document.querySelector<HTMLInputElement>("#cross-color"), size = document.querySelector<HTMLInputElement>("#cross-size"), quality = document.querySelector<HTMLSelectElement>("#graphics-quality"), pixelRatio = document.querySelector<HTMLInputElement>("#graphics-pixel-ratio"), shadows = document.querySelector<HTMLInputElement>("#graphics-shadows");
+  const touchControls = document.querySelector<HTMLSelectElement>("#touch-controls"), touchJoystick = document.querySelector<HTMLSelectElement>("#touch-joystick"), touchSize = document.querySelector<HTMLInputElement>("#touch-size"), touchOpacity = document.querySelector<HTMLInputElement>("#touch-opacity"), touchHorizontal = document.querySelector<HTMLInputElement>("#touch-horizontal"), touchVertical = document.querySelector<HTMLInputElement>("#touch-vertical"), touchHaptics = document.querySelector<HTMLInputElement>("#touch-haptics");
   if (sensitivity) sensitivity.oninput = () => { settings.sensitivity = Number(sensitivity.value); if (sensitivityValue) sensitivityValue.value = settings.sensitivity.toFixed(4); saveSettings(settings); };
   if (color) color.oninput = () => { settings.crosshair.color = color.value; paintCrosshair(reticle, settings.crosshair); saveSettings(settings); };
   if (size) size.oninput = () => { settings.crosshair.size = Number(size.value); paintCrosshair(reticle, settings.crosshair); saveSettings(settings); };
   if (quality) quality.onchange = () => { settings.graphics = { ...graphicsPresets[quality.value as GraphicsQuality] }; graphics(); };
   if (pixelRatio) pixelRatio.oninput = () => { settings.graphics.pixelRatio = Number(pixelRatio.value); graphics(); };
   if (shadows) shadows.onchange = () => { settings.graphics.shadows = shadows.checked; graphics(); };
+  const saveTouchSettings = () => { const controls = touchControls?.value, joystick = touchJoystick?.value; if (controls === "auto" || controls === "on" || controls === "off") settings.touch.controls = controls; if (joystick === "fixed" || joystick === "floating") settings.touch.joystick = joystick; settings.touch.size = Number(touchSize?.value ?? settings.touch.size); settings.touch.opacity = Number(touchOpacity?.value ?? settings.touch.opacity); settings.touch.horizontalSensitivity = Number(touchHorizontal?.value ?? settings.touch.horizontalSensitivity); settings.touch.verticalSensitivity = Number(touchVertical?.value ?? settings.touch.verticalSensitivity); settings.touch.haptics = touchHaptics?.checked ?? settings.touch.haptics; applyTouchSettings(); saveSettings(settings); };
+  touchControls?.addEventListener("change", saveTouchSettings); touchJoystick?.addEventListener("change", saveTouchSettings); touchSize?.addEventListener("input", saveTouchSettings); touchOpacity?.addEventListener("input", saveTouchSettings); touchHorizontal?.addEventListener("input", saveTouchSettings); touchVertical?.addEventListener("input", saveTouchSettings); touchHaptics?.addEventListener("change", saveTouchSettings);
   const simulation = network.simulationSettings(), netLatency = document.querySelector<HTMLInputElement>("#arena-net-latency"), netJitter = document.querySelector<HTMLInputElement>("#arena-net-jitter"), netLoss = document.querySelector<HTMLInputElement>("#arena-net-loss");
   if (netLatency) netLatency.value = String(simulation.latencyMs);
   if (netJitter) netJitter.value = String(simulation.jitterMs);
   if (netLoss) netLoss.value = String(simulation.lossPercent);
   const applyNetworkSimulation = () => network.setSimulation({ latencyMs: Number(netLatency?.value), jitterMs: Number(netJitter?.value), lossPercent: Number(netLoss?.value) });
   netLatency?.addEventListener("change", applyNetworkSimulation); netJitter?.addEventListener("change", applyNetworkSimulation); netLoss?.addEventListener("change", applyNetworkSimulation);
-  document.querySelector("#settings-reset")?.addEventListener("click", () => { const defaults = structuredClone(defaultSettings); settings.sensitivity = defaults.sensitivity; settings.fov = defaults.fov; Object.assign(settings.crosshair, defaults.crosshair); Object.assign(settings.graphics, defaults.graphics); Object.assign(settings.bindings, defaults.bindings); paintCrosshair(reticle, settings.crosshair); graphics(); syncSettingsControls(); document.querySelector("#binding-notice")!.textContent = "DEFAULT SETTINGS RESTORED."; });
+  document.querySelector("#settings-reset")?.addEventListener("click", () => { const defaults = structuredClone(defaultSettings); settings.sensitivity = defaults.sensitivity; settings.fov = defaults.fov; Object.assign(settings.crosshair, defaults.crosshair); Object.assign(settings.graphics, defaults.graphics); Object.assign(settings.touch, defaults.touch); Object.assign(settings.bindings, defaults.bindings); paintCrosshair(reticle, settings.crosshair); applyTouchSettings(); graphics(); syncSettingsControls(); document.querySelector("#binding-notice")!.textContent = "DEFAULT SETTINGS RESTORED."; });
   document.querySelector("#cross-share")?.addEventListener("click", () => navigator.clipboard?.writeText(crosshairCode(settings.crosshair)));
   document.querySelector<HTMLInputElement>("#cross-import")?.addEventListener("change", event => { const value = importCrosshair((event.target as HTMLInputElement).value); if (value) { settings.crosshair = value; paintCrosshair(reticle, value); saveSettings(settings); syncSettingsControls(); } });
   syncSettingsControls(); updateHud();
@@ -234,19 +254,19 @@ export function mountArena(_onComplete: (result: ArenaResult) => void) {
     }
     if (active && openPanel && !pausedAt) updateHud(now);
     if (active && !openPanel) {
-      if (document.pointerLockElement === renderer.domElement) player.update(dt, input);
+      const movement: MovementInput = touchEnabled() ? touch!.movement() : input.movement();
+      if (touchEnabled()) aiming = touch!.aiming;
+      if (canControl()) player.update(dt, movement);
       if (online && now - lastInputSync >= 1000 / 60) {
         lastInputSync = now;
-        const moveX = Number(input.keys.has(input.bindings.right)) - Number(input.keys.has(input.bindings.left));
-        const moveZ = Number(input.keys.has(input.bindings.forward)) - Number(input.keys.has(input.bindings.back));
-        pendingInputs.push(network.sendInput({ moveX, moveZ, sprint: input.keys.has("ShiftLeft"), crouch: input.keys.has("ControlLeft"), jump: input.keys.has(input.bindings.jump), yaw: player.yaw, pitch: player.pitch }));
+        pendingInputs.push(network.sendInput({ ...movement, yaw: player.yaw, pitch: player.pitch }));
         while (pendingInputs.length > 180) pendingInputs.shift();
       }
       if (correction) {
         camera.position.lerp(correction, Math.min(1, dt * 12));
         if (camera.position.distanceTo(correction) < .02) correction = undefined;
       }
-      if (input.firing && weapon.spec.automatic) fire();
+      if ((input.firing || touch?.firing) && weapon.spec.automatic) fire();
       recoil.update(dt); gun.rotation.x = -recoil.pitch; gun.rotation.y = recoil.yaw;
       updateWeaponViewModel(gun, now, player.velocity.length(), aiming, weapon.reloadProgress(now));
       const targetFov = aiming ? 58 : settings.fov; camera.fov += (targetFov - camera.fov) * Math.min(1, dt * 12); camera.updateProjectionMatrix();
@@ -282,7 +302,7 @@ export function mountArena(_onComplete: (result: ArenaResult) => void) {
     renderer.render(scene, camera); raf = requestAnimationFrame(frame);
   };
   raf = requestAnimationFrame(frame);
-  stop = () => { cancelAnimationFrame(raf); weapon.cancelReload(); network.close(); input.destroy(); observer.disconnect(); document.exitPointerLock?.(); document.removeEventListener("keydown", onKeyDown); document.removeEventListener("pointerlockchange", onLockChange); document.removeEventListener("fullscreenchange", updateFullscreen); disposeMap(activeMap); renderer.dispose(); host.replaceChildren(); stop = undefined; };
+  stop = () => { cancelAnimationFrame(raf); weapon.cancelReload(); network.close(); touch?.destroy(); input.destroy(); observer.disconnect(); document.exitPointerLock?.(); document.removeEventListener("keydown", onKeyDown); document.removeEventListener("pointerlockchange", onLockChange); document.removeEventListener("fullscreenchange", updateFullscreen); disposeMap(activeMap); renderer.dispose(); host.replaceChildren(); stop = undefined; };
   return stop;
 }
 
