@@ -8,7 +8,7 @@ import { authority } from "./services/authority";
 import type { AiDifficulty, DuelResult, DirectGameMode, GameMode, LocalModeStats, MultiplayerGameMode, MultiplayerRound, PlayerProfile, Room, Round, RpsChoice } from "./types";
 
 type Page = "home" | "mode-select" | "game" | "multiplayer" | "how-to" | "profile";
-const appVersion = "5.1.4";
+const appVersion = "5.1.5";
 if ("serviceWorker" in navigator) window.addEventListener("load", () => void navigator.serviceWorker.register("/sw.js").catch(() => undefined));
 const root = document.querySelector<HTMLDivElement>("#app")!;
 const mobileViewport = window.matchMedia("(max-width: 700px)");
@@ -345,7 +345,7 @@ function resultPanel() {
 
 function render() {
   root.innerHTML = page === "home" ? homeView() : page === "mode-select" ? modeSelectView() : page === "game" ? gameView() : page === "multiplayer" ? multiplayerView() : page === "profile" ? profileView() : howToView();
-  if (page === "multiplayer") root.querySelector(".lobby")?.insertAdjacentHTML("afterend", `<section class="private-room arena-card"><p class="eyebrow">IRON YARD</p><h2>FPS 1V1 & QUICK GAME</h2><p>${import.meta.env.VITE_ARENA_SERVER_URL ? "Choose a map for a private room or search for the next available FPS rival." : "Iron Yard needs the separately deployed WebSocket server before private 1v1 rooms can connect."}</p><button id="enter-arena-multiplayer" class="primary">OPEN IRON YARD</button></section>`);
+  if (page === "multiplayer") root.querySelector(".authority-note")?.insertAdjacentHTML("afterend", `<section class="private-room arena-card"><p class="eyebrow">IRON YARD</p><h2>FPS 1V1 & QUICK GAME</h2><p>${import.meta.env.VITE_ARENA_SERVER_URL ? "Choose a map for a private room or search for the next available FPS rival." : "Iron Yard needs the separately deployed WebSocket server before private 1v1 rooms can connect."}</p><button id="enter-arena-multiplayer" class="primary">OPEN IRON YARD</button></section>`);
   if (page === "game" && (mode === "showdown-series" || multiplayerRoom?.mode === "showdown-series")) {
     const shared = multiplayerRoom?.roundState.round;
     const hostView = multiplayerRoom?.hostId === multiplayerUserId;
